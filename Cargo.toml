@@ -2,6 +2,11 @@
 name = "mlyr"
 version = "0.1.0"
 edition = "2024"
+authors = ["sharkow"]
+description = "mlyr is a Rust library designed to parse, validate, serialize, and embed synchronized lyrics"
+license = "MIT"
+repository = "https://github.com/Sharkow1743/mlyr"
+readme = "README.md"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
