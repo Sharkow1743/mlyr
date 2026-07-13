@@ -8,8 +8,7 @@ license = "MIT"
 repository = "https://github.com/Sharkow1743/mlyr"
 readme = "README.md"
 exclude = [
-    ".gitignore",
-    ".cargo_vcs_info.json",
+    ".gitignore"
 ]
 
 [dependencies]
