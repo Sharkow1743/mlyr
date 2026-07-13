@@ -7,6 +7,10 @@ description = "mlyr is a Rust library designed to parse, validate, serialize, an
 license = "MIT"
 repository = "https://github.com/Sharkow1743/mlyr"
 readme = "README.md"
+exclude = [
+    ".gitignore",
+    ".cargo_vcs_info.json",
+]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
