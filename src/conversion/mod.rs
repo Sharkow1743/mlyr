@@ -2,6 +2,22 @@ mod lrc;
 mod richsync;
 mod xml;
 
+use super::ValidationError;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConversionError {
+    #[error("LRC parse error: {0}")]
+    Lrc(String),
+    #[error("JSON processing error: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("Validation error: {0}")]
+    Validation(#[from] ValidationError),
+    #[error("XML Deserialization error: {0}")]
+    XmlDeserialization(#[from] quick_xml::de::DeError),
+    #[error("XML Serialization error: {0}")]
+    XmlSerialization(#[from] quick_xml::se::SeError),
+}
+
 pub mod duration_seconds_opt {
     use serde::{self, Deserialize, Deserializer, Serializer};
     use std::time::Duration;

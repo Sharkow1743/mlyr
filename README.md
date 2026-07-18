@@ -11,9 +11,9 @@
 You can import standard or word-enhanced LRC files and convert them into the internal model, or export an existing model back to LRC format
 
 ```rust
-use mlyr::Mlyr;
+use mlyr::{Mlyr, ConversionError};
 
-fn main() -> Result<(), String> {
+fn main() -> Result<(), ConversionError> {
     let lrc_data = r#"
     [ti: Song Title]
     [ar: Artist Name]
@@ -25,7 +25,7 @@ fn main() -> Result<(), String> {
     let mlyr_instance = Mlyr::from_lrc(lrc_data)?;
 
     // Converting back
-    let lrc_output = mlyr_instance.to_lrc();
+    let lrc_output = mlyr_instance.to_lrc()?;
     println!("{}", lrc_output);
 
     Ok(())
@@ -51,11 +51,11 @@ fn create_valid_lyrics() -> Result<mlyr::Mlyr, mlyr::ValidationError> {
         .add_segment(Some(Duration::from_secs(2)), "World".to_string())?
         .build();
 
-    // The builder checks that this line doesn't start before the previous line's end bound
+    // The builder checks that lines and segments go after each other
     let lyrics = MlyrBuilder::new()
         .metadata(metadata)
         .add_line(line1)?
-        .build();
+        .build()?;
 
     Ok(lyrics)
 }
@@ -86,9 +86,9 @@ fn to_xml_string(mlyr: &Mlyr) -> Result<(), Box<dyn std::error::Error>> {
 Translate from musixmatch's character/word synchronized JSON schema to `Mlyr` and vice versa
 
 ```rust
-use mlyr::Mlyr;
+use mlyr::{Mlyr, ConversionError};
 
-fn handle_richsync(json_content: &str) -> Result<(), serde_json::Error> {
+fn handle_richsync(json_content: &str) -> Result<(), ConversionError> {
     // Parsing
     let mlyr = Mlyr::from_richsync(json_content)?;
 

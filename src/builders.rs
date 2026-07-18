@@ -1,7 +1,6 @@
 use super::definition::*;
 use std::time::Duration;
 
-// Ensure ValidationError is imported or defined
 #[derive(Debug, thiserror::Error)]
 pub enum ValidationError {
     #[error(
@@ -21,9 +20,7 @@ pub enum ValidationError {
     },
 }
 
-// ==========================================
 // Mlyr Builder
-// ==========================================
 pub struct MlyrBuilder {
     metadata: Option<Metadata>,
     lines: Vec<Line>,
@@ -44,7 +41,6 @@ impl MlyrBuilder {
         self
     }
 
-    /// Safely adds a line after validating that it does not overlap with the previous line sequence.
     pub fn add_line(mut self, line: Line) -> Result<Self, ValidationError> {
         if let Some(line_offset) = line.offset {
             if let Some(prev_max) = self.last_line_max_time {
@@ -56,7 +52,6 @@ impl MlyrBuilder {
                 }
             }
 
-            // Calculate when this line finishes
             let last_seg_offset = line
                 .segments
                 .last()
@@ -75,7 +70,6 @@ impl MlyrBuilder {
 
             self.last_line_max_time = Some(std::cmp::max(main_max_time, parallel_max_time));
         } else {
-            // Unsynchronized lines reset consecutive temporal checks
             self.last_line_max_time = None;
         }
 
@@ -83,17 +77,17 @@ impl MlyrBuilder {
         Ok(self)
     }
 
-    pub fn build(self) -> Mlyr {
-        Mlyr {
+    pub fn build(self) -> Result<Mlyr, ValidationError> {
+        let mlyr = Mlyr {
             metadata: self.metadata,
             lyrics: Lyrics { lines: self.lines },
-        }
+        };
+        mlyr.validate()?;
+        Ok(mlyr)
     }
 }
 
-// ==========================================
 // Line Builder
-// ==========================================
 pub struct LineBuilder {
     offset: Option<Duration>,
     voice: Option<String>,
@@ -116,7 +110,6 @@ impl LineBuilder {
         self
     }
 
-    /// Safely adds a segment after validating that it is monotonic relative to prior segments.
     pub fn add_segment(
         mut self,
         offset: Option<Duration>,
@@ -152,9 +145,7 @@ impl LineBuilder {
     }
 }
 
-// ==========================================
 // Parallel Line Builder
-// ==========================================
 pub struct ParallelLineBuilder {
     offset: Option<Duration>,
     voice: String,
@@ -170,7 +161,6 @@ impl ParallelLineBuilder {
         }
     }
 
-    /// Safely adds a segment to the parallel stream after validating monotonicity.
     pub fn add_segment(
         mut self,
         offset: Option<Duration>,
@@ -200,9 +190,7 @@ impl ParallelLineBuilder {
     }
 }
 
-// ==========================================
 // Metadata Helper Constructors
-// ==========================================
 impl Metadata {
     pub fn new(song_name: &str, artist: &str) -> Self {
         Self {
@@ -224,7 +212,6 @@ impl Metadata {
         self
     }
 
-    /// Appends a source to the source list. Can be called multiple times.
     pub fn source(mut self, name: &str, url: Option<String>) -> Self {
         let new_source = Source {
             name: name.to_string(),
@@ -239,5 +226,76 @@ impl Metadata {
             });
         }
         self
+    }
+}
+
+// Validation
+impl Mlyr {
+    /// Ensures that segments and lines go after each other
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        let mut last_line_max_time: Option<Duration> = None;
+
+        for line in &self.lyrics.lines {
+            let mut last_val = Duration::ZERO;
+            for (i, seg) in line.segments.iter().enumerate() {
+                let current_val = seg.offset.unwrap_or(Duration::ZERO);
+                if i > 0 && current_val < last_val {
+                    return Err(ValidationError::SegmentOffsetDecreasing {
+                        line_offset: line.offset,
+                        previous: last_val,
+                        current: current_val,
+                    });
+                }
+                last_val = current_val;
+            }
+
+            if let Some(ref parallel) = line.parallel {
+                let mut last_p_val = Duration::ZERO;
+                for (i, seg) in parallel.segments.iter().enumerate() {
+                    let current_val = seg.offset.unwrap_or(Duration::ZERO);
+                    if i > 0 && current_val < last_p_val {
+                        return Err(ValidationError::SegmentOffsetDecreasing {
+                            line_offset: parallel.offset,
+                            previous: last_p_val,
+                            current: current_val,
+                        });
+                    }
+                    last_p_val = current_val;
+                }
+            }
+
+            if let Some(line_offset) = line.offset {
+                if let Some(prev_max) = last_line_max_time {
+                    if line_offset < prev_max {
+                        return Err(ValidationError::LineOverlap {
+                            current_line: line_offset,
+                            prev_max_time: prev_max,
+                        });
+                    }
+                }
+
+                let last_seg_offset = line
+                    .segments
+                    .last()
+                    .and_then(|s| s.offset)
+                    .unwrap_or(Duration::ZERO);
+                let main_max_time = line_offset + last_seg_offset;
+
+                let parallel_max_time = line.parallel.as_ref().map_or(Duration::ZERO, |p| {
+                    let last_p_seg_offset = p
+                        .segments
+                        .last()
+                        .and_then(|s| s.offset)
+                        .unwrap_or(Duration::ZERO);
+                    line_offset + p.offset.unwrap_or(Duration::ZERO) + last_p_seg_offset
+                });
+
+                last_line_max_time = Some(std::cmp::max(main_max_time, parallel_max_time));
+            } else {
+                last_line_max_time = None;
+            }
+        }
+
+        Ok(())
     }
 }

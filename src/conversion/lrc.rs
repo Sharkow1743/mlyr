@@ -1,9 +1,10 @@
 use super::super::definition::*;
+use super::ConversionError;
 use std::time::Duration;
 
 impl Mlyr {
-    /// Parses standard or enhanced LRC format text back into an `Mlyr` instance.
-    pub fn from_lrc(lrc_text: &str) -> Result<Self, String> {
+    /// Creates `Mlyr` object from LRC string
+    pub fn from_lrc(lrc_text: &str) -> Result<Self, ConversionError> {
         let mut lines = Vec::new();
         let mut metadata = Metadata {
             song_name: None,
@@ -19,12 +20,10 @@ impl Mlyr {
                 continue;
             }
 
-            // Parse metadata tags: e.g. [ti: Song Title], [ar: Artist], [al: Album], [length: 03:45]
             if raw_line.starts_with('[') && raw_line.contains(':') {
                 if let Some(close_bracket) = raw_line.find(']') {
                     let tag_content = &raw_line[1..close_bracket];
                     if let Some(colon_idx) = tag_content.find(':') {
-                        // Check if it's a valid timestamp. If it is, this is a lyric line, not metadata.
                         if parse_lrc_timestamp(tag_content).is_none() {
                             let key = tag_content[..colon_idx].trim().to_lowercase();
                             let val = tag_content[colon_idx + 1..].trim().to_string();
@@ -45,7 +44,6 @@ impl Mlyr {
                 }
             }
 
-            // Parse timing lines. Supports multi-timestamp matching: [01:23.45][02:23.45] Text
             let mut text_start_idx = 0;
             let mut timestamps = Vec::new();
 
@@ -122,7 +120,6 @@ impl Mlyr {
                     });
                 }
 
-                // If no enhanced markers existed, default the primary segment relative to the line start
                 if !segments.is_empty() && segments.iter().all(|s| s.offset.is_none()) {
                     segments[0].offset = Some(Duration::ZERO);
                 }
@@ -136,7 +133,7 @@ impl Mlyr {
             }
         }
 
-        Ok(Mlyr {
+        let mlyr = Mlyr {
             metadata: if metadata.song_name.is_some()
                 || metadata.artist.is_some()
                 || metadata.album.is_some()
@@ -147,11 +144,16 @@ impl Mlyr {
                 None
             },
             lyrics: Lyrics { lines },
-        })
+        };
+
+        mlyr.validate()?;
+        Ok(mlyr)
     }
 
-    /// Converts this `Mlyr` instance back to standard or word-enhanced LRC string.
-    pub fn to_lrc(&self) -> String {
+    /// Creates LRC string from `Mlyr` object
+    pub fn to_lrc(&self) -> Result<String, ConversionError> {
+        self.validate()?;
+
         let mut output = String::new();
 
         if let Some(ref meta) = self.metadata {
@@ -174,7 +176,6 @@ impl Mlyr {
                 let ts_str = format_lrc_timestamp(line_offset);
                 output.push_str(&format!("[{}]", ts_str));
 
-                // Check for word-level sync
                 let has_word_sync = line
                     .segments
                     .iter()
@@ -207,11 +208,10 @@ impl Mlyr {
             }
         }
 
-        output
+        Ok(output)
     }
 }
 
-// Helpers for LRC timestamps (converts [mm:ss.xx] and vice versa)
 fn parse_lrc_timestamp(s: &str) -> Option<Duration> {
     let parts: Vec<&str> = s.split(':').collect();
     if parts.len() != 2 {

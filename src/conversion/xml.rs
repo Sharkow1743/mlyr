@@ -1,18 +1,21 @@
 use super::super::definition::*;
+use super::ConversionError;
 
 impl Mlyr {
-    /// Deserializes a MLYR payload from an XML string
-    pub fn from_xml(xml_str: &str) -> Result<Self, quick_xml::de::DeError> {
-        quick_xml::de::from_str(xml_str)
+    /// Creates `Mlyr` object from XML string
+    pub fn from_xml(xml_str: &str) -> Result<Self, ConversionError> {
+        let mlyr: Self = quick_xml::de::from_str(xml_str)?;
+        mlyr.validate()?;
+        Ok(mlyr)
     }
 
-    /// Serializes the struct back into an XML string with indentation
-    pub fn to_xml_formatted(&self) -> Result<String, quick_xml::se::SeError> {
+    /// Creates XML string with indentation from `Mlyr` object
+    pub fn to_xml_formatted(&self) -> Result<String, ConversionError> {
+        self.validate()?;
+
         let mut buffer = Vec::new();
-        // Create an XML writer configured with 2-space indentation
         let mut writer = quick_xml::Writer::new_with_indent(&mut buffer, b'\t', 1);
 
-        // Serialize the root "mlyr" element using the indentation settings
         writer.write_serializable("mlyr", self)?;
 
         let xml_str = String::from_utf8(buffer)
@@ -20,7 +23,9 @@ impl Mlyr {
         Ok(xml_str)
     }
 
-    pub fn to_xml(&self) -> Result<String, quick_xml::se::SeError> {
-        quick_xml::se::to_string(self)
+    /// Creates XML string from `Mlyr` object
+    pub fn to_xml(&self) -> Result<String, ConversionError> {
+        self.validate()?;
+        Ok(quick_xml::se::to_string(self)?)
     }
 }

@@ -1,29 +1,24 @@
 use super::super::definition::*;
+use super::ConversionError;
 use std::time::Duration;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-struct RichSyncLine {
-    /// Line start time in seconds
+pub struct RichSyncLine {
     pub ts: f64,
-    /// Line end time in seconds
     pub te: f64,
-    /// List of word/character timings
     pub l: Vec<RichSyncWord>,
-    /// Complete line text
     pub x: String,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-struct RichSyncWord {
-    /// Character or word text
+pub struct RichSyncWord {
     pub c: String,
-    /// Time offset in seconds relative to line start time (ts)
     pub o: f64,
 }
 
 impl Mlyr {
-    /// Creates an `Mlyr` instance from Richsync
-    pub fn from_richsync(json_str: &str) -> Result<Self, serde_json::Error> {
+    /// Creates `Mlyr` object from Richsync string
+    pub fn from_richsync(json_str: &str) -> Result<Self, ConversionError> {
         let mxm_lines: Vec<RichSyncLine> = serde_json::from_str(json_str)?;
         let mut lines = Vec::new();
 
@@ -46,14 +41,19 @@ impl Mlyr {
             });
         }
 
-        Ok(Mlyr {
+        let mlyr = Mlyr {
             metadata: None,
             lyrics: Lyrics { lines },
-        })
+        };
+
+        mlyr.validate()?;
+        Ok(mlyr)
     }
 
-    /// Converts this `Mlyr` instance to Richsync
-    pub fn to_richsync(&self) -> Result<String, serde_json::Error> {
+    /// Creates Richsync string from `Mlyr` object
+    pub fn to_richsync(&self) -> Result<String, ConversionError> {
+        self.validate()?;
+
         let mut mxm_lines = Vec::new();
 
         for line in &self.lyrics.lines {
@@ -86,6 +86,6 @@ impl Mlyr {
             });
         }
 
-        serde_json::to_string(&mxm_lines)
+        Ok(serde_json::to_string(&mxm_lines)?)
     }
 }
