@@ -1,9 +1,8 @@
 use super::super::definition::*;
 use std::time::Duration;
 
-// Support structures mapping directly to Musixmatch's Richsync JSON specification
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct RichSyncLine {
+struct RichSyncLine {
     /// Line start time in seconds
     pub ts: f64,
     /// Line end time in seconds
@@ -15,7 +14,7 @@ pub struct RichSyncLine {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct RichSyncWord {
+struct RichSyncWord {
     /// Character or word text
     pub c: String,
     /// Time offset in seconds relative to line start time (ts)
@@ -23,7 +22,7 @@ pub struct RichSyncWord {
 }
 
 impl Mlyr {
-    /// Creates an `Mlyr` instance from Musixmatch's proprietary Richsync JSON format.
+    /// Creates an `Mlyr` instance from Richsync
     pub fn from_richsync(json_str: &str) -> Result<Self, serde_json::Error> {
         let mxm_lines: Vec<RichSyncLine> = serde_json::from_str(json_str)?;
         let mut lines = Vec::new();
@@ -53,7 +52,7 @@ impl Mlyr {
         })
     }
 
-    /// Converts this `Mlyr` instance to Musixmatch's proprietary Richsync JSON format.
+    /// Converts this `Mlyr` instance to Richsync
     pub fn to_richsync(&self) -> Result<String, serde_json::Error> {
         let mut mxm_lines = Vec::new();
 
