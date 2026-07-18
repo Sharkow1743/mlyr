@@ -6,8 +6,18 @@ use std::time::Duration;
 #[serde(rename = "mlyr")]
 pub struct Mlyr {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<Metadata>,
-    pub lyrics: Lyrics,
+    pub(crate) metadata: Option<Metadata>,
+    pub(crate) lyrics: Lyrics,
+}
+
+impl Mlyr {
+    pub fn metadata(&self) -> Option<&Metadata> {
+        self.metadata.as_ref()
+    }
+
+    pub fn lyrics(&self) -> &Lyrics {
+        &self.lyrics
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
