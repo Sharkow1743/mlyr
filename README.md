@@ -2,6 +2,9 @@
 
 `mlyr` is a Rust library designed to parse, validate, serialize, and embed synchronized lyrics. Its format uses xml and supports translation between standard LRC, word-level enhanced LRC and Musixmatch Richsync
 
+> [!NOTE]
+> Crate and format name originates from `Music LYRics`
+
 ---
 
 ## Usage examples
