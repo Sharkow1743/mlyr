@@ -32,7 +32,7 @@ impl Mlyr {
             }
         };
 
-        tag.insert_text(ItemKey::Comment, xml_lyrics);
+        tag.insert_text(ItemKey::Lyrics, xml_lyrics);
 
         tag.save_to_path(&file_path, WriteOptions::default())?;
 
@@ -49,7 +49,7 @@ impl Mlyr {
             .ok_or("No tags found in this audio file")?;
 
         let xml_lyrics = tag
-            .get_string(ItemKey::Comment)
+            .get_string(ItemKey::Lyrics)
             .ok_or("No comment field found in the audio metadata")?;
 
         let mlyr = Self::from_xml(xml_lyrics)?;

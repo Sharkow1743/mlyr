@@ -4,5 +4,5 @@ mod definition;
 mod embedding;
 
 pub use builders::*;
-pub use conversion::ConversionError;
+pub use conversion::{ConversionError, IntoOffset};
 pub use definition::*;

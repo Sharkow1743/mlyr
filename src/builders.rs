@@ -1,3 +1,4 @@
+use super::conversion::IntoOffset;
 use super::definition::*;
 use std::time::Duration;
 
@@ -22,7 +23,7 @@ pub enum ValidationError {
 
 // Mlyr Builder
 pub struct MlyrBuilder {
-    metadata: Option<Metadata>,
+    metadata: Metadata,
     lines: Vec<Line>,
     last_line_max_time: Option<Duration>,
 }
@@ -30,14 +31,14 @@ pub struct MlyrBuilder {
 impl MlyrBuilder {
     pub fn new() -> Self {
         Self {
-            metadata: None,
+            metadata: Metadata::default(),
             lines: Vec::new(),
             last_line_max_time: None,
         }
     }
 
     pub fn metadata(mut self, metadata: Metadata) -> Self {
-        self.metadata = Some(metadata);
+        self.metadata = metadata;
         self
     }
 
@@ -55,7 +56,7 @@ impl MlyrBuilder {
             let last_seg_offset = line
                 .segments
                 .last()
-                .and_then(|s| s.offset)
+                .map(|s| s.offset)
                 .unwrap_or(Duration::ZERO);
             let main_max_time = line_offset + last_seg_offset;
 
@@ -63,7 +64,7 @@ impl MlyrBuilder {
                 let last_p_seg_offset = p
                     .segments
                     .last()
-                    .and_then(|s| s.offset)
+                    .map(|s| s.offset)
                     .unwrap_or(Duration::ZERO);
                 line_offset + p.offset.unwrap_or(Duration::ZERO) + last_p_seg_offset
             });
@@ -90,34 +91,34 @@ impl MlyrBuilder {
 // Line Builder
 pub struct LineBuilder {
     offset: Option<Duration>,
-    voice: Option<String>,
+    voice: u8,
     segments: Vec<Segment>,
     parallel: Option<ParallelLine>,
 }
 
 impl LineBuilder {
-    pub fn new(offset: Option<Duration>) -> Self {
+    pub fn new<T: IntoOffset>(offset: T) -> Self {
         Self {
-            offset,
-            voice: None,
+            offset: offset.into_offset(),
+            voice: 0,
             segments: Vec::new(),
             parallel: None,
         }
     }
 
-    pub fn voice(mut self, voice: &str) -> Self {
-        self.voice = Some(voice.to_string());
+    pub fn voice(mut self, voice: u8) -> Self {
+        self.voice = voice;
         self
     }
 
-    pub fn add_segment(
+    pub fn add_segment<T: IntoOffset>(
         mut self,
-        offset: Option<Duration>,
+        offset: T,
         text: String,
     ) -> Result<Self, ValidationError> {
-        let current_val = offset.unwrap_or(Duration::ZERO);
+        let current_val = offset.into_offset().unwrap_or(Duration::ZERO);
         if let Some(last_seg) = self.segments.last() {
-            let last_val = last_seg.offset.unwrap_or(Duration::ZERO);
+            let last_val = last_seg.offset;
             if current_val < last_val {
                 return Err(ValidationError::SegmentOffsetDecreasing {
                     line_offset: self.offset,
@@ -126,7 +127,10 @@ impl LineBuilder {
                 });
             }
         }
-        self.segments.push(Segment { offset, text });
+        self.segments.push(Segment {
+            offset: current_val,
+            text,
+        });
         Ok(self)
     }
 
@@ -148,27 +152,27 @@ impl LineBuilder {
 // Parallel Line Builder
 pub struct ParallelLineBuilder {
     offset: Option<Duration>,
-    voice: String,
+    voice: u8,
     segments: Vec<Segment>,
 }
 
 impl ParallelLineBuilder {
-    pub fn new(offset: Option<Duration>, voice: &str) -> Self {
+    pub fn new<T: IntoOffset>(offset: T) -> Self {
         Self {
-            offset,
-            voice: voice.to_string(),
+            offset: offset.into_offset(),
+            voice: 0,
             segments: Vec::new(),
         }
     }
 
-    pub fn add_segment(
+    pub fn add_segment<T: IntoOffset>(
         mut self,
-        offset: Option<Duration>,
+        offset: T,
         text: String,
     ) -> Result<Self, ValidationError> {
-        let current_val = offset.unwrap_or(Duration::ZERO);
+        let current_val = offset.into_offset().unwrap_or(Duration::ZERO);
         if let Some(last_seg) = self.segments.last() {
-            let last_val = last_seg.offset.unwrap_or(Duration::ZERO);
+            let last_val = last_seg.offset;
             if current_val < last_val {
                 return Err(ValidationError::SegmentOffsetDecreasing {
                     line_offset: self.offset,
@@ -177,8 +181,16 @@ impl ParallelLineBuilder {
                 });
             }
         }
-        self.segments.push(Segment { offset, text });
+        self.segments.push(Segment {
+            offset: current_val,
+            text,
+        });
         Ok(self)
+    }
+
+    pub fn voice(mut self, voice: u8) -> Self {
+        self.voice = voice;
+        self
     }
 
     pub fn build(self) -> ParallelLine {
@@ -198,7 +210,7 @@ impl Metadata {
             artist: Some(artist.to_string()),
             album: None,
             length: None,
-            sources: None,
+            sources: Sources::default(),
         }
     }
 
@@ -217,14 +229,7 @@ impl Metadata {
             name: name.to_string(),
             url,
         };
-
-        if let Some(ref mut sources_wrapper) = self.sources {
-            sources_wrapper.list.push(new_source);
-        } else {
-            self.sources = Some(Sources {
-                list: vec![new_source],
-            });
-        }
+        self.sources.list.push(new_source);
         self
     }
 }
@@ -238,7 +243,7 @@ impl Mlyr {
         for line in &self.lyrics.lines {
             let mut last_val = Duration::ZERO;
             for (i, seg) in line.segments.iter().enumerate() {
-                let current_val = seg.offset.unwrap_or(Duration::ZERO);
+                let current_val = seg.offset;
                 if i > 0 && current_val < last_val {
                     return Err(ValidationError::SegmentOffsetDecreasing {
                         line_offset: line.offset,
@@ -252,7 +257,7 @@ impl Mlyr {
             if let Some(ref parallel) = line.parallel {
                 let mut last_p_val = Duration::ZERO;
                 for (i, seg) in parallel.segments.iter().enumerate() {
-                    let current_val = seg.offset.unwrap_or(Duration::ZERO);
+                    let current_val = seg.offset;
                     if i > 0 && current_val < last_p_val {
                         return Err(ValidationError::SegmentOffsetDecreasing {
                             line_offset: parallel.offset,
@@ -277,7 +282,7 @@ impl Mlyr {
                 let last_seg_offset = line
                     .segments
                     .last()
-                    .and_then(|s| s.offset)
+                    .map(|s| s.offset)
                     .unwrap_or(Duration::ZERO);
                 let main_max_time = line_offset + last_seg_offset;
 
@@ -285,7 +290,7 @@ impl Mlyr {
                     let last_p_seg_offset = p
                         .segments
                         .last()
-                        .and_then(|s| s.offset)
+                        .map(|s| s.offset)
                         .unwrap_or(Duration::ZERO);
                     line_offset + p.offset.unwrap_or(Duration::ZERO) + last_p_seg_offset
                 });

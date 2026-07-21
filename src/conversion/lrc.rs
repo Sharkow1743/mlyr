@@ -5,13 +5,13 @@ use std::time::Duration;
 impl Mlyr {
     /// Creates `Mlyr` object from LRC string
     pub fn from_lrc(lrc_text: &str) -> Result<Self, ConversionError> {
-        let mut lines = Vec::new();
+        let mut raw_lines = Vec::new();
         let mut metadata = Metadata {
             song_name: None,
             artist: None,
             album: None,
             length: None,
-            sources: None,
+            sources: Sources::default(),
         };
 
         for raw_line in lrc_text.lines() {
@@ -62,10 +62,10 @@ impl Mlyr {
             let lyrics_text = raw_line[text_start_idx..].trim();
             if timestamps.is_empty() {
                 if !lyrics_text.is_empty() {
-                    lines.push(Line {
+                    raw_lines.push(RawLine {
                         offset: None,
                         voice: None,
-                        segments: vec![Segment {
+                        segments: vec![RawSegment {
                             offset: None,
                             text: lyrics_text.to_string(),
                         }],
@@ -91,7 +91,7 @@ impl Mlyr {
                             if let Some(absolute_seg_ts) = parse_lrc_timestamp(inner_ts_str) {
                                 if !current_segment_text.is_empty() || last_segment_offset.is_some()
                                 {
-                                    segments.push(Segment {
+                                    segments.push(RawSegment {
                                         offset: last_segment_offset,
                                         text: current_segment_text.clone(),
                                     });
@@ -114,7 +114,7 @@ impl Mlyr {
                 }
 
                 if !current_segment_text.is_empty() || last_segment_offset.is_some() {
-                    segments.push(Segment {
+                    segments.push(RawSegment {
                         offset: last_segment_offset,
                         text: current_segment_text,
                     });
@@ -124,7 +124,7 @@ impl Mlyr {
                     segments[0].offset = Some(Duration::ZERO);
                 }
 
-                lines.push(Line {
+                raw_lines.push(RawLine {
                     offset: Some(ts),
                     voice: None,
                     segments,
@@ -133,7 +133,7 @@ impl Mlyr {
             }
         }
 
-        let mlyr = Mlyr {
+        let raw_mlyr = RawMlyr {
             metadata: if metadata.song_name.is_some()
                 || metadata.artist.is_some()
                 || metadata.album.is_some()
@@ -143,10 +143,10 @@ impl Mlyr {
             } else {
                 None
             },
-            lyrics: Lyrics { lines },
+            lyrics: RawLyrics { lines: raw_lines },
         };
 
-        mlyr.validate()?;
+        let mlyr = Mlyr::try_from(raw_mlyr)?;
         Ok(mlyr)
     }
 
@@ -156,17 +156,17 @@ impl Mlyr {
 
         let mut output = String::new();
 
-        if let Some(ref meta) = self.metadata {
-            if let Some(ref ti) = meta.song_name {
+        if !self.metadata.is_empty() {
+            if let Some(ref ti) = self.metadata.song_name {
                 output.push_str(&format!("[ti:{}]\n", ti));
             }
-            if let Some(ref ar) = meta.artist {
+            if let Some(ref ar) = self.metadata.artist {
                 output.push_str(&format!("[ar:{}]\n", ar));
             }
-            if let Some(ref al) = meta.album {
+            if let Some(ref al) = self.metadata.album {
                 output.push_str(&format!("[al:{}]\n", al));
             }
-            if let Some(len) = meta.length {
+            if let Some(len) = self.metadata.length {
                 output.push_str(&format!("[length:{}]\n", format_lrc_timestamp(len)));
             }
         }
@@ -176,23 +176,16 @@ impl Mlyr {
                 let ts_str = format_lrc_timestamp(line_offset);
                 output.push_str(&format!("[{}]", ts_str));
 
-                let has_word_sync = line
-                    .segments
-                    .iter()
-                    .any(|s| s.offset.is_some() && s.offset != Some(Duration::ZERO));
+                let has_word_sync = line.segments.iter().any(|s| s.offset != Duration::ZERO);
 
                 if has_word_sync {
                     for seg in &line.segments {
-                        if let Some(seg_offset) = seg.offset {
-                            let absolute_seg_ts = line_offset + seg_offset;
-                            output.push_str(&format!(
-                                "<{}>{}",
-                                format_lrc_timestamp(absolute_seg_ts),
-                                seg.text
-                            ));
-                        } else {
-                            output.push_str(&seg.text);
-                        }
+                        let absolute_seg_ts = line_offset + seg.offset;
+                        output.push_str(&format!(
+                            "<{}>{}",
+                            format_lrc_timestamp(absolute_seg_ts),
+                            seg.text
+                        ));
                     }
                 } else {
                     for seg in &line.segments {
@@ -219,7 +212,12 @@ fn parse_lrc_timestamp(s: &str) -> Option<Duration> {
     }
     let mins: u64 = parts[0].trim().parse().ok()?;
 
-    let sec_parts: Vec<&str> = parts[1].split('.').collect();
+    // Support both dot and comma millisecond decimal separators
+    let sec_parts: Vec<&str> = if parts[1].contains(',') {
+        parts[1].split(',').collect()
+    } else {
+        parts[1].split('.').collect()
+    };
     if sec_parts.is_empty() {
         return None;
     }

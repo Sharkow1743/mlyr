@@ -20,20 +20,20 @@ impl Mlyr {
     /// Creates `Mlyr` object from Richsync string
     pub fn from_richsync(json_str: &str) -> Result<Self, ConversionError> {
         let mxm_lines: Vec<RichSyncLine> = serde_json::from_str(json_str)?;
-        let mut lines = Vec::new();
+        let mut raw_lines = Vec::with_capacity(mxm_lines.len());
 
         for mxm_line in mxm_lines {
             let offset = Some(Duration::from_secs_f64(mxm_line.ts));
-            let segments: Vec<Segment> = mxm_line
+            let segments: Vec<RawSegment> = mxm_line
                 .l
                 .into_iter()
-                .map(|word| Segment {
+                .map(|word| RawSegment {
                     offset: Some(Duration::from_secs_f64(word.o)),
                     text: word.c,
                 })
                 .collect();
 
-            lines.push(Line {
+            raw_lines.push(RawLine {
                 offset,
                 voice: None,
                 segments,
@@ -41,12 +41,12 @@ impl Mlyr {
             });
         }
 
-        let mlyr = Mlyr {
+        let raw_mlyr = RawMlyr {
             metadata: None,
-            lyrics: Lyrics { lines },
+            lyrics: RawLyrics { lines: raw_lines },
         };
 
-        mlyr.validate()?;
+        let mlyr = Mlyr::try_from(raw_mlyr)?;
         Ok(mlyr)
     }
 
@@ -61,7 +61,7 @@ impl Mlyr {
             let last_offset_sec = line
                 .segments
                 .last()
-                .and_then(|s| s.offset)
+                .map(|s| s.offset)
                 .unwrap_or(Duration::ZERO)
                 .as_secs_f64();
             let te = ts + last_offset_sec;
@@ -70,7 +70,7 @@ impl Mlyr {
             let mut full_text = String::new();
 
             for seg in &line.segments {
-                let offset_sec = seg.offset.unwrap_or(Duration::ZERO).as_secs_f64();
+                let offset_sec = seg.offset.as_secs_f64();
                 word_list.push(RichSyncWord {
                     c: seg.text.clone(),
                     o: offset_sec,

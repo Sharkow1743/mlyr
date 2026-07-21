@@ -5,7 +5,7 @@ impl Mlyr {
     /// Creates `Mlyr` object from XML string
     pub fn from_xml(xml_str: &str) -> Result<Self, ConversionError> {
         let mlyr: Self = quick_xml::de::from_str(xml_str)?;
-        mlyr.validate()?;
+        // Validation & normalization are automatically processed by RawMlyr during deserialization
         Ok(mlyr)
     }
 
