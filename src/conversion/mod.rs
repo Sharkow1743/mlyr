@@ -134,9 +134,3 @@ impl IntoOffset for () {
 pub(crate) fn is_zero_u8(val: &u8) -> bool {
     *val == 0
 }
-
-trait LyricsConverter<ExternalLyrics> {
-    fn from(lyrics: ExternalLyrics) -> Mlyr;
-    fn to(lyrics: Mlyr) -> ExternalLyrics;
-    fn available(lyrics: ExternalLyrics) -> bool;
-}
