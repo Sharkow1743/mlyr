@@ -7,7 +7,7 @@ impl Mlyr {
     pub fn from_lrc(lrc_text: &str) -> Result<Self, ConversionError> {
         let mut raw_lines = Vec::new();
         let mut metadata = Metadata {
-            song_name: None,
+            title: None,
             artist: None,
             album: None,
             length: None,
@@ -28,7 +28,7 @@ impl Mlyr {
                             let key = tag_content[..colon_idx].trim().to_lowercase();
                             let val = tag_content[colon_idx + 1..].trim().to_string();
                             match key.as_str() {
-                                "ti" => metadata.song_name = Some(val),
+                                "ti" => metadata.title = Some(val),
                                 "ar" => metadata.artist = Some(val),
                                 "al" => metadata.album = Some(val),
                                 "length" => {
@@ -134,7 +134,7 @@ impl Mlyr {
         }
 
         let raw_mlyr = RawMlyr {
-            metadata: if metadata.song_name.is_some()
+            metadata: if metadata.title.is_some()
                 || metadata.artist.is_some()
                 || metadata.album.is_some()
                 || metadata.length.is_some()
@@ -157,7 +157,7 @@ impl Mlyr {
         let mut output = String::new();
 
         if !self.metadata.is_empty() {
-            if let Some(ref ti) = self.metadata.song_name {
+            if let Some(ref ti) = self.metadata.title {
                 output.push_str(&format!("[ti:{}]\n", ti));
             }
             if let Some(ref ar) = self.metadata.artist {

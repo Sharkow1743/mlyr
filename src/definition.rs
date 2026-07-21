@@ -1,4 +1,4 @@
-use super::conversion::{IntoOffset, duration_seconds, duration_seconds_opt, is_zero_u8};
+use super::conversion::{duration_seconds, duration_seconds_opt, is_zero_u8};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::time::Duration;
 
@@ -59,7 +59,7 @@ impl Mlyr {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Default)]
 pub struct Metadata {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub song_name: Option<String>,
+    pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub artist: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -76,7 +76,7 @@ pub struct Metadata {
 
 impl Metadata {
     pub fn is_empty(&self) -> bool {
-        self.song_name.is_none()
+        self.title.is_none()
             && self.artist.is_none()
             && self.album.is_none()
             && self.length.is_none()

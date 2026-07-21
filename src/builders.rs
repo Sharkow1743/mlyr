@@ -206,7 +206,7 @@ impl ParallelLineBuilder {
 impl Metadata {
     pub fn new(song_name: &str, artist: &str) -> Self {
         Self {
-            song_name: Some(song_name.to_string()),
+            title: Some(song_name.to_string()),
             artist: Some(artist.to_string()),
             album: None,
             length: None,
