@@ -18,7 +18,7 @@
     <album>Greatest Hits</album>
     <length>180</length>
     <sources>
-      <source name="Musixmatch" url="https://www.musixmatch.com"/>
+      <source name="YouTube" url="youtube.com/watch?v=dQw4w9WgXcQ"/>
     </sources>
   </metadata>
   <lyrics>
@@ -47,7 +47,7 @@
     * `<sources>` *(Optional)*: Omitted if empty
       * `<source>`: Source of the media this lyric is meant for
         * `@name`: Name of the source platform (e.g., "Musixmatch")
-        * `@url` *(Optional)*: URL of the **specific media** (e.g., `youtube.com/watch?v=someid`), and **not** the general platform site
+        * `@url` *(Optional)*: URL of the **specific media** (e.g., `youtube.com/watch?v=dQw4w9WgXcQ`), and **not** the general platform site
   * `<lyrics>`
     * `<line>`
       * `@offset` *(Optional)*: Start of the line in seconds
@@ -60,7 +60,7 @@
         * `@voice` *(Optional)*
         * `<segment>`
           * `@offset` *(Optional)*
-          * `@text` *(Required)*
+          * `@text`
 
 ## Normalization
 
