@@ -2,23 +2,32 @@ mod lrc;
 mod richsync;
 mod xml;
 
+pub use lrc::Lrc;
+pub use richsync::Richsync;
+pub use xml::Xml;
+
 use std::time::Duration;
 
 use super::ValidationError;
 use crate::Mlyr;
 
-#[derive(Debug, thiserror::Error)]
+use anyhow::Error;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
 pub enum ConversionError {
-    #[error("LRC parse error: {0}")]
-    Lrc(String),
-    #[error("JSON processing error: {0}")]
-    Json(#[from] serde_json::Error),
     #[error("Validation error: {0}")]
     Validation(#[from] ValidationError),
-    #[error("XML Deserialization error: {0}")]
-    XmlDeserialization(#[from] quick_xml::de::DeError),
-    #[error("XML Serialization error: {0}")]
-    XmlSerialization(#[from] quick_xml::se::SeError),
+
+    #[error("Parsing error for {format_name} format: {source}")]
+    Parsing {
+        format_name: &'static str,
+        #[source]
+        source: Error,
+    },
+
+    #[error("Unexpected error: {0}")]
+    Other(#[from] Error),
 }
 
 pub mod duration_seconds {
@@ -75,6 +84,74 @@ pub mod duration_seconds_opt {
             None => Ok(None),
         }
     }
+}
+
+/// Trait for conversion between external lyrics formats and Mlyr format
+pub trait LyricsConverter<E = ConversionError>:
+    From<String> + Into<String> + std::fmt::Display
+{
+    /// Converts this fromat to the Mlyr format
+    fn to_mlyr(lyrics: Self) -> Result<Mlyr, E>;
+    /// Converts Mlyr format to this format
+    /// Creates minimized version
+    fn from_mlyr(lyrics: Mlyr) -> Result<Self, E>;
+    /// Converts Mlyr format to this format
+    /// Creates version with formatting, like indentation, comments, etc
+    /// Defaults to output of `from_mlyr` method
+    fn from_mlyr_formatted(lyrics: Mlyr) -> Result<Self, E> {
+        Self::from_mlyr(lyrics)
+    }
+}
+
+/// Macro to create a new lyrics type with LyricsConverter implementation
+#[macro_export]
+macro_rules! define_lyrics_type {
+    (
+        $vis:vis struct $name:ident($inner_type:ty);
+        $(#[$meta:meta])*
+        impl LyricsConverter {
+            fn to_mlyr($param:ident: Self) -> Result<Mlyr, $error:ty> $to_impl:block
+            fn from_mlyr($param2:ident: Mlyr) -> Result<Self, $error2:ty> $from_impl:block
+            $(fn from_mlyr_formatted($param3:ident: Mlyr) -> Result<Self, $error3:ty> $formatted_impl:block)?
+        }
+    ) => {
+        $(#[$meta])*
+        $vis struct $name($inner_type);
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
+
+        impl From<String> for $name {
+            fn from(value: String) -> Self {
+                Self(value)
+            }
+        }
+
+        impl Into<String> for $name {
+            fn into(self) -> String {
+                self.0
+            }
+        }
+
+        impl $crate::LyricsConverter<$error> for $name {
+            fn to_mlyr($param: Self) -> Result<Mlyr, $error> {
+                $to_impl
+            }
+
+            fn from_mlyr($param2: Mlyr) -> Result<Self, $error2> {
+                $from_impl
+            }
+
+            $(
+            fn from_mlyr_formatted($param3: Mlyr) -> Result<Self, $error3> {
+                $formatted_impl
+            }
+            )?
+        }
+    };
 }
 
 pub trait IntoOffset {

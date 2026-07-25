@@ -1,31 +1,53 @@
+use anyhow::Error;
+
+use crate::define_lyrics_type;
+
 use super::super::definition::*;
 use super::ConversionError;
 
-impl Mlyr {
-    /// Creates `Mlyr` object from XML string
-    pub fn from_xml(xml_str: &str) -> Result<Self, ConversionError> {
-        let mlyr: Self = quick_xml::de::from_str(xml_str)?;
-        // Validation & normalization are automatically processed by RawMlyr during deserialization
-        Ok(mlyr)
+define_lyrics_type!(
+    pub struct Xml(String);
+
+    /// Mlyr XML format converter
+    impl LyricsConverter {
+        fn to_mlyr(xml: Self) -> Result<Mlyr, ConversionError> {
+            let mlyr: Mlyr =
+                quick_xml::de::from_str(&xml.0).map_err(|e| ConversionError::Parsing {
+                    format_name: "Xml",
+                    source: Error::from(e),
+                })?;
+            Ok(mlyr)
+        }
+
+        fn from_mlyr(mlyr: Mlyr) -> Result<Self, ConversionError> {
+            mlyr.validate()?;
+            Ok(Xml(quick_xml::se::to_string(&mlyr).map_err(|e| {
+                ConversionError::Parsing {
+                    format_name: "Xml",
+                    source: Error::from(e),
+                }
+            })?))
+        }
+
+        fn from_mlyr_formatted(mlyr: Mlyr) -> Result<Self, ConversionError> {
+            mlyr.validate()?;
+
+            let mut buffer = Vec::new();
+            let mut writer = quick_xml::Writer::new_with_indent(&mut buffer, b'\t', 1);
+
+            writer
+                .write_serializable("mlyr", &mlyr)
+                .map_err(|e| ConversionError::Parsing {
+                    format_name: "Xml",
+                    source: Error::from(e),
+                })?;
+
+            let xml_str = String::from_utf8(buffer).map_err(|e| ConversionError::Parsing {
+                format_name: "Xml",
+                source: Error::from(e),
+            })?;
+
+            Ok(Xml(xml_str))
+        }
     }
-
-    /// Creates XML string with indentation from `Mlyr` object
-    pub fn to_xml_formatted(&self) -> Result<String, ConversionError> {
-        self.validate()?;
-
-        let mut buffer = Vec::new();
-        let mut writer = quick_xml::Writer::new_with_indent(&mut buffer, b'\t', 1);
-
-        writer.write_serializable("mlyr", self)?;
-
-        let xml_str = String::from_utf8(buffer)
-            .map_err(|e| <quick_xml::se::SeError as serde::ser::Error>::custom(e.to_string()))?;
-        Ok(xml_str)
-    }
-
-    /// Creates XML string from `Mlyr` object
-    pub fn to_xml(&self) -> Result<String, ConversionError> {
-        self.validate()?;
-        Ok(quick_xml::se::to_string(self)?)
-    }
-}
+);

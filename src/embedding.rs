@@ -1,3 +1,5 @@
+use crate::{LyricsConverter, Xml};
+
 use super::definition::*;
 use std::path::Path;
 
@@ -13,7 +15,7 @@ impl Mlyr {
         &self,
         file_path: P,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let xml_lyrics = self.to_xml()?;
+        let xml_lyrics = Xml::from_mlyr(self.clone())?;
 
         let mut tagged_file = Probe::open(&file_path)?.read()?;
 
@@ -32,7 +34,7 @@ impl Mlyr {
             }
         };
 
-        tag.insert_text(ItemKey::Lyrics, xml_lyrics);
+        tag.insert_text(ItemKey::Lyrics, xml_lyrics.into());
 
         tag.save_to_path(&file_path, WriteOptions::default())?;
 
@@ -52,7 +54,7 @@ impl Mlyr {
             .get_string(ItemKey::Lyrics)
             .ok_or("No comment field found in the audio metadata")?;
 
-        let mlyr = Self::from_xml(xml_lyrics)?;
+        let mlyr = Xml::to_mlyr(xml_lyrics.to_string().into())?;
 
         Ok(mlyr)
     }
