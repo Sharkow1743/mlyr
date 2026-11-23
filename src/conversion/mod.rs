@@ -2,16 +2,13 @@ mod lrc;
 mod richsync;
 mod xml;
 
+use std::time::Duration;
+
 pub use lrc::Lrc;
 pub use richsync::Richsync;
 pub use xml::Xml;
 
-use std::time::Duration;
-
-use super::ValidationError;
-use crate::Mlyr;
-
-use anyhow::Error;
+use crate::{Mlyr, ValidationError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -23,35 +20,14 @@ pub enum ConversionError {
     Parsing {
         format_name: &'static str,
         #[source]
-        source: Error,
+        source: Box<dyn std::error::Error + Send + Sync>,
     },
 
-    #[error("Unexpected error: {0}")]
-    Other(#[from] Error),
-}
-
-pub mod duration_seconds {
-    use serde::{self, Deserialize, Deserializer, Serializer};
-    use std::time::Duration;
-
-    pub fn serialize<S>(val: &Duration, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_f64(val.as_secs_f64())
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let secs = f64::deserialize(deserializer)?;
-        if secs < 0.0 {
-            Err(serde::de::Error::custom("Negative durations are invalid"))
-        } else {
-            Ok(Duration::from_secs_f64(secs))
-        }
-    }
+    #[error("Invalid {format_name} format: {message}")]
+    InvalidFormat {
+        format_name: &'static str,
+        message: String,
+    },
 }
 
 pub mod duration_seconds_opt {
@@ -75,8 +51,10 @@ pub mod duration_seconds_opt {
         let s: Option<f64> = Option::deserialize(deserializer)?;
         match s {
             Some(secs) => {
-                if secs < 0.0 {
-                    Err(serde::de::Error::custom("Negative durations are invalid"))
+                if !secs.is_finite() || secs < 0.0 {
+                    Err(serde::de::Error::custom(
+                        "Non-finite or negative durations are invalid",
+                    ))
                 } else {
                     Ok(Some(Duration::from_secs_f64(secs)))
                 }
@@ -86,41 +64,61 @@ pub mod duration_seconds_opt {
     }
 }
 
-/// Trait for conversion between external lyrics formats and Mlyr format
+/// Trait for conversion between external lyrics formats and the [`Mlyr`] IR
 pub trait LyricsConverter<E = ConversionError>:
-    From<String> + Into<String> + std::fmt::Display
+    From<String> + Into<String> + std::fmt::Display + Sized
 {
-    /// Converts this fromat to the Mlyr format
+    /// Converts this format to the [`Mlyr`] IR
     fn to_mlyr(lyrics: Self) -> Result<Mlyr, E>;
-    /// Converts Mlyr format to this format
-    /// Creates minimized version
+
+    /// Converts [`Mlyr`] IR to this format (minimized)
     fn from_mlyr(lyrics: Mlyr) -> Result<Self, E>;
-    /// Converts Mlyr format to this format
-    /// Creates version with formatting, like indentation, comments, etc
-    /// Defaults to output of `from_mlyr` method
+
+    /// Converts [`Mlyr`] IR to this format with formatting
+    /// Defaults to `from_mlyr`
     fn from_mlyr_formatted(lyrics: Mlyr) -> Result<Self, E> {
         Self::from_mlyr(lyrics)
     }
+
+    /// Converts directly from this format into any other [`LyricsConverter`] via [`Mlyr`]
+    fn convert_to<T: LyricsConverter<E>>(self) -> Result<T, E> {
+        let mlyr = Self::to_mlyr(self)?;
+        T::from_mlyr(mlyr)
+    }
+
+    /// Converts directly from this format into any formatted [`LyricsConverter`] via [`Mlyr`]
+    fn convert_to_formatted<T: LyricsConverter<E>>(self) -> Result<T, E> {
+        let mlyr = Self::to_mlyr(self)?;
+        T::from_mlyr_formatted(mlyr)
+    }
 }
 
-/// Macro to create a new lyrics type with LyricsConverter implementation
+/// Generates a [`String`] wrapper implementing [`Display`](std::fmt::Display), [`AsRef<str>`], and [`From`] conversions
 #[macro_export]
 macro_rules! define_lyrics_type {
     (
-        $vis:vis struct $name:ident($inner_type:ty);
         $(#[$meta:meta])*
-        impl LyricsConverter {
-            fn to_mlyr($param:ident: Self) -> Result<Mlyr, $error:ty> $to_impl:block
-            fn from_mlyr($param2:ident: Mlyr) -> Result<Self, $error2:ty> $from_impl:block
-            $(fn from_mlyr_formatted($param3:ident: Mlyr) -> Result<Self, $error3:ty> $formatted_impl:block)?
-        }
+        $vis:vis struct $name:ident;
     ) => {
         $(#[$meta])*
-        $vis struct $name($inner_type);
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        $vis struct $name(pub String);
+
+        impl $name {
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl AsRef<str> for $name {
+            fn as_ref(&self) -> &str {
+                &self.0
+            }
+        }
 
         impl std::fmt::Display for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", self.0)
+                f.write_str(&self.0)
             }
         }
 
@@ -130,26 +128,10 @@ macro_rules! define_lyrics_type {
             }
         }
 
-        impl Into<String> for $name {
-            fn into(self) -> String {
-                self.0
+        impl From<$name> for String {
+            fn from(value: $name) -> Self {
+                value.0
             }
-        }
-
-        impl $crate::LyricsConverter<$error> for $name {
-            fn to_mlyr($param: Self) -> Result<Mlyr, $error> {
-                $to_impl
-            }
-
-            fn from_mlyr($param2: Mlyr) -> Result<Self, $error2> {
-                $from_impl
-            }
-
-            $(
-            fn from_mlyr_formatted($param3: Mlyr) -> Result<Self, $error3> {
-                $formatted_impl
-            }
-            )?
         }
     };
 }
@@ -166,7 +148,7 @@ impl IntoOffset for Duration {
 
 impl IntoOffset for f64 {
     fn into_offset(self) -> Option<Duration> {
-        if self >= 0.0 {
+        if self.is_finite() && self >= 0.0 {
             Some(Duration::from_secs_f64(self))
         } else {
             None
@@ -176,7 +158,7 @@ impl IntoOffset for f64 {
 
 impl IntoOffset for f32 {
     fn into_offset(self) -> Option<Duration> {
-        if self >= 0.0 {
+        if self.is_finite() && self >= 0.0 {
             Some(Duration::from_secs_f64(self as f64))
         } else {
             None
