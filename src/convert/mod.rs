@@ -1,7 +1,11 @@
+#[cfg(feature = "lrc")]
 mod lrc;
+#[cfg(feature = "richsync")]
 mod richsync;
 
+#[cfg(feature = "lrc")]
 pub use lrc::Lrc;
+#[cfg(feature = "richsync")]
 pub use richsync::Richsync;
 
 use thiserror::Error;

@@ -1,19 +1,27 @@
+#[cfg(feature = "convert")]
 use std::collections::HashMap;
+#[cfg(feature = "convert")]
 use std::time::Duration;
 
-use crate::model::{
-    Line, LineKind, Lyrics, Metadata, Mlyr, Segment, Source, Voice, VoiceId, VoiceRole,
-};
+#[cfg(feature = "convert")]
+use crate::model::{Line, LineKind, Lyrics, Metadata, Mlyr, Segment, Source};
+use crate::model::{Voice, VoiceId, VoiceRole};
+#[cfg(feature = "convert")]
 use crate::validation::ValidationError;
 
+#[cfg(feature = "convert")]
 use super::{FormatError, SignedTimestamp};
 
+#[cfg(feature = "convert")]
+#[allow(dead_code)]
 pub(crate) struct RawMlyr {
     pub(crate) metadata: RawMetadata,
     pub(crate) lyrics_offset: Option<SignedTimestamp>,
     pub(crate) lines: Vec<RawLine>,
 }
 
+#[cfg(feature = "convert")]
+#[allow(dead_code)]
 #[derive(Default)]
 pub(crate) struct RawMetadata {
     pub(crate) title: Option<String>,
@@ -24,12 +32,16 @@ pub(crate) struct RawMetadata {
     pub(crate) sources: Vec<Source>,
 }
 
+#[cfg(feature = "convert")]
+#[allow(dead_code)]
 pub(crate) struct RawVoiceDecl {
     pub(crate) id: String,
     pub(crate) role: VoiceRole,
     pub(crate) singer: Option<String>,
 }
 
+#[cfg(feature = "convert")]
+#[allow(dead_code)]
 pub(crate) struct RawLine {
     pub(crate) kind: LineKind,
     pub(crate) offset: Duration,
@@ -51,6 +63,8 @@ pub(crate) fn resolve_default_voice(voices: &[Voice]) -> VoiceId {
     VoiceId::default_id()
 }
 
+#[cfg(feature = "convert")]
+#[allow(dead_code)]
 pub(crate) fn normalize_raw_mlyr(raw: RawMlyr) -> Result<Mlyr, FormatError> {
     let voices = build_voice_table(raw.metadata.voices)?;
     let default_target = resolve_default_voice(&voices);
@@ -117,6 +131,7 @@ pub(crate) fn normalize_raw_mlyr(raw: RawMlyr) -> Result<Mlyr, FormatError> {
     Ok(mlyr)
 }
 
+#[cfg(feature = "convert")]
 fn build_voice_table(decls: Vec<RawVoiceDecl>) -> Result<Vec<Voice>, ValidationError> {
     let mut voices: Vec<Voice> = Vec::new();
     let mut index_by_id: HashMap<VoiceId, usize> = HashMap::new();

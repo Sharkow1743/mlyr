@@ -1,9 +1,11 @@
 pub mod inline_text;
 pub(crate) mod normalize;
 pub mod timestamp;
+#[cfg(feature = "xml")]
 pub mod xml;
 
 pub use timestamp::SignedTimestamp;
+#[cfg(feature = "xml")]
 pub use xml::MlyrXml;
 
 use crate::validation::ValidationError;

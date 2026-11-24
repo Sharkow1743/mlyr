@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use lofty::config::WriteOptions;
+use lofty::error::{FileEncodingError, FileParseError};
 use lofty::prelude::*;
 use lofty::probe::Probe;
 use lofty::tag::{ItemKey, Tag, TagExt};
@@ -10,8 +11,14 @@ use crate::model::Mlyr;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EmbeddingError {
-    #[error("Audio metadata error: {0}")]
-    Lofty(#[from] lofty::error::LoftyError),
+    #[error("Audio file I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Failed to parse audio file metadata: {0}")]
+    Parse(#[from] FileParseError),
+
+    #[error("Failed to write audio file metadata: {0}")]
+    Encode(#[from] FileEncodingError),
 
     #[error("MLYR XML format error: {0}")]
     Format(#[from] FormatError),
@@ -55,7 +62,7 @@ impl Mlyr {
         Ok(())
     }
 
-    /// Retrieves and parses an `Mlyr` object from XML stored in the metadata of the specified audio file.
+    /// Retrieves and parses an `Mlyr` object from XML stored in the metadata of the specified audio file
     pub fn from_file<P: AsRef<Path>>(file_path: P) -> Result<Self, EmbeddingError> {
         let tagged_file = Probe::open(&file_path)?.read()?;
 
