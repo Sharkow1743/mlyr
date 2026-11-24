@@ -10,10 +10,16 @@ pub mod validation;
 pub use builders::{IntoOffset, LineBuilder, MlyrBuilder};
 #[cfg(feature = "lrc")]
 pub use convert::Lrc;
+#[cfg(feature = "lyricsfile")]
+pub use convert::Lyricsfile;
 #[cfg(feature = "richsync")]
 pub use convert::Richsync;
+#[cfg(feature = "ttml")]
+pub use convert::Ttml;
 #[cfg(feature = "convert")]
 pub use convert::{ConversionError, LyricsConverter};
+#[cfg(feature = "lyricify")]
+pub use convert::{LyricifyLines, LyricifyQuickExport, LyricifySyllable};
 #[cfg(feature = "embedding")]
 pub use embedding::EmbeddingError;
 #[cfg(feature = "xml")]

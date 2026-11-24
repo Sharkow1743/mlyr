@@ -1,18 +1,18 @@
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "xml"))]
 use std::collections::HashMap;
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "xml"))]
 use std::time::Duration;
 
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "xml"))]
 use crate::model::{Line, LineKind, Lyrics, Metadata, Mlyr, Segment, Source};
 use crate::model::{Voice, VoiceId, VoiceRole};
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "xml"))]
 use crate::validation::ValidationError;
 
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "xml"))]
 use super::{FormatError, SignedTimestamp};
 
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "xml"))]
 #[allow(dead_code)]
 pub(crate) struct RawMlyr {
     pub(crate) metadata: RawMetadata,
@@ -20,7 +20,7 @@ pub(crate) struct RawMlyr {
     pub(crate) lines: Vec<RawLine>,
 }
 
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "xml"))]
 #[allow(dead_code)]
 #[derive(Default)]
 pub(crate) struct RawMetadata {
@@ -32,7 +32,7 @@ pub(crate) struct RawMetadata {
     pub(crate) sources: Vec<Source>,
 }
 
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "xml"))]
 #[allow(dead_code)]
 pub(crate) struct RawVoiceDecl {
     pub(crate) id: String,
@@ -40,7 +40,7 @@ pub(crate) struct RawVoiceDecl {
     pub(crate) singer: Option<String>,
 }
 
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "xml"))]
 #[allow(dead_code)]
 pub(crate) struct RawLine {
     pub(crate) kind: LineKind,
@@ -63,7 +63,7 @@ pub(crate) fn resolve_default_voice(voices: &[Voice]) -> VoiceId {
     VoiceId::default_id()
 }
 
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "xml"))]
 #[allow(dead_code)]
 pub(crate) fn normalize_raw_mlyr(raw: RawMlyr) -> Result<Mlyr, FormatError> {
     let voices = build_voice_table(raw.metadata.voices)?;
@@ -131,7 +131,7 @@ pub(crate) fn normalize_raw_mlyr(raw: RawMlyr) -> Result<Mlyr, FormatError> {
     Ok(mlyr)
 }
 
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "xml"))]
 fn build_voice_table(decls: Vec<RawVoiceDecl>) -> Result<Vec<Voice>, ValidationError> {
     let mut voices: Vec<Voice> = Vec::new();
     let mut index_by_id: HashMap<VoiceId, usize> = HashMap::new();

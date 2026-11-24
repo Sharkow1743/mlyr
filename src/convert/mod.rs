@@ -1,12 +1,24 @@
 #[cfg(feature = "lrc")]
 mod lrc;
+#[cfg(feature = "lyricify")]
+mod lyricify;
+#[cfg(feature = "lyricsfile")]
+mod lyricsfile;
 #[cfg(feature = "richsync")]
 mod richsync;
+#[cfg(feature = "ttml")]
+mod ttml;
 
 #[cfg(feature = "lrc")]
 pub use lrc::Lrc;
+#[cfg(feature = "lyricify")]
+pub use lyricify::{LyricifyLines, LyricifyQuickExport, LyricifySyllable};
+#[cfg(feature = "lyricsfile")]
+pub use lyricsfile::Lyricsfile;
 #[cfg(feature = "richsync")]
 pub use richsync::Richsync;
+#[cfg(feature = "ttml")]
+pub use ttml::Ttml;
 
 use thiserror::Error;
 
