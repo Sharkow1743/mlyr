@@ -1,21 +1,35 @@
-use crate::{LyricsConverter, Xml};
-
-use super::definition::*;
 use std::path::Path;
 
-// Import lofty metadata capabilities
 use lofty::config::WriteOptions;
 use lofty::prelude::*;
 use lofty::probe::Probe;
 use lofty::tag::{ItemKey, Tag, TagExt};
 
+use crate::format::FormatError;
+use crate::model::Mlyr;
+
+#[derive(Debug, thiserror::Error)]
+pub enum EmbeddingError {
+    #[error("Audio metadata error: {0}")]
+    Lofty(#[from] lofty::error::LoftyError),
+
+    #[error("MLYR XML format error: {0}")]
+    Format(#[from] FormatError),
+
+    #[error("Failed to initialize a tag for this file type")]
+    TagInitializationFailed,
+
+    #[error("No tags found in this audio file")]
+    NoTagsFound,
+
+    #[error("No lyrics field found in the audio metadata")]
+    MissingLyricsField,
+}
+
 impl Mlyr {
     /// Embeds the `Mlyr` object as XML into metadata of the specified audio file
-    pub fn embed_to_file<P: AsRef<Path>>(
-        &self,
-        file_path: P,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let xml_lyrics = Xml::from_mlyr(self.clone())?;
+    pub fn embed_to_file<P: AsRef<Path>>(&self, file_path: P) -> Result<(), EmbeddingError> {
+        let xml_lyrics = self.to_xml()?;
 
         let mut tagged_file = Probe::open(&file_path)?.read()?;
 
@@ -29,33 +43,31 @@ impl Mlyr {
                     tagged_file.insert_tag(Tag::new(tag_type));
                     tagged_file
                         .primary_tag_mut()
-                        .ok_or("Failed to initialize a tag for this file type")?
+                        .ok_or(EmbeddingError::TagInitializationFailed)?
                 }
             }
         };
 
-        tag.insert_text(ItemKey::Lyrics, xml_lyrics.into());
+        tag.insert_text(ItemKey::Lyrics, xml_lyrics);
 
         tag.save_to_path(&file_path, WriteOptions::default())?;
 
         Ok(())
     }
 
-    /// Retrieves and converts to `Mlyr` object XML from metadata of the specified auio file
-    pub fn from_file<P: AsRef<Path>>(file_path: P) -> Result<Self, Box<dyn std::error::Error>> {
+    /// Retrieves and parses an `Mlyr` object from XML stored in the metadata of the specified audio file.
+    pub fn from_file<P: AsRef<Path>>(file_path: P) -> Result<Self, EmbeddingError> {
         let tagged_file = Probe::open(&file_path)?.read()?;
 
         let tag = tagged_file
             .primary_tag()
             .or_else(|| tagged_file.first_tag())
-            .ok_or("No tags found in this audio file")?;
+            .ok_or(EmbeddingError::NoTagsFound)?;
 
         let xml_lyrics = tag
             .get_string(ItemKey::Lyrics)
-            .ok_or("No comment field found in the audio metadata")?;
+            .ok_or(EmbeddingError::MissingLyricsField)?;
 
-        let mlyr = Xml::to_mlyr(xml_lyrics.to_string().into())?;
-
-        Ok(mlyr)
+        Ok(Mlyr::from_xml(xml_lyrics)?)
     }
 }

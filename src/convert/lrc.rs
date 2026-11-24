@@ -1,8 +1,8 @@
-use crate::{LyricsConverter, define_lyrics_type};
-
-use super::super::definition::*;
-use super::ConversionError;
 use std::time::Duration;
+
+use crate::format::normalize::{RawLine, RawLyrics, RawMlyr, RawSegment};
+use crate::model::{Metadata, Mlyr, Sources};
+use crate::{ConversionError, LyricsConverter, define_lyrics_type};
 
 define_lyrics_type!(
     pub struct Lrc;
