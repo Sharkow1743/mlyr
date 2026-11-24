@@ -13,20 +13,18 @@ impl IntoOffset for Duration {
 impl IntoOffset for f64 {
     fn into_offset(self) -> Option<Duration> {
         if self.is_finite() && self >= 0.0 {
-            Some(Duration::from_secs_f64(self))
-        } else {
-            None
+            let ms = (self * 1_000.0).round();
+            if ms <= u64::MAX as f64 {
+                return Some(Duration::from_millis(ms as u64));
+            }
         }
+        None
     }
 }
 
 impl IntoOffset for f32 {
     fn into_offset(self) -> Option<Duration> {
-        if self.is_finite() && self >= 0.0 {
-            Some(Duration::from_secs_f64(self as f64))
-        } else {
-            None
-        }
+        (self as f64).into_offset()
     }
 }
 

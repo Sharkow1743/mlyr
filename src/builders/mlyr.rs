@@ -1,12 +1,10 @@
-use std::time::Duration;
-
+use crate::format::normalize::resolve_default_voice;
 use crate::model::{Line, Lyrics, Metadata, Mlyr};
 use crate::validation::ValidationError;
 
 pub struct MlyrBuilder {
     metadata: Metadata,
     lines: Vec<Line>,
-    last_line_max_time: Option<Duration>,
 }
 
 impl Default for MlyrBuilder {
@@ -20,7 +18,6 @@ impl MlyrBuilder {
         Self {
             metadata: Metadata::default(),
             lines: Vec::new(),
-            last_line_max_time: None,
         }
     }
 
@@ -29,46 +26,37 @@ impl MlyrBuilder {
         self
     }
 
-    pub fn add_line(mut self, line: Line) -> Result<Self, ValidationError> {
-        if let Some(line_offset) = line.offset {
-            if let Some(prev_max) = self.last_line_max_time {
-                if line_offset < prev_max {
-                    return Err(ValidationError::LineOverlap {
-                        current_line: line_offset,
-                        prev_max_time: prev_max,
-                    });
-                }
-            }
-
-            let last_seg_offset = line
-                .segments
-                .last()
-                .map(|s| s.offset)
-                .unwrap_or(Duration::ZERO);
-            let main_max_time = line_offset + last_seg_offset;
-
-            let parallel_max_time = line.parallel.as_ref().map_or(Duration::ZERO, |p| {
-                let last_p_seg_offset = p
-                    .segments
-                    .last()
-                    .map(|s| s.offset)
-                    .unwrap_or(Duration::ZERO);
-                line_offset + p.offset.unwrap_or(Duration::ZERO) + last_p_seg_offset
-            });
-
-            self.last_line_max_time = Some(std::cmp::max(main_max_time, parallel_max_time));
-        } else {
-            self.last_line_max_time = None;
-        }
-
+    pub fn add_line(mut self, line: Line) -> Self {
         self.lines.push(line);
-        Ok(self)
+        self
     }
 
+    pub fn add_lines(mut self, lines: impl IntoIterator<Item = Line>) -> Self {
+        self.lines.extend(lines);
+        self
+    }
+
+    /// Builds and validates [`Mlyr`] model
     pub fn build(self) -> Result<Mlyr, ValidationError> {
+        let mut lines = self.lines;
+
+        if !self.metadata.voices.is_empty() {
+            let has_explicit_default = self.metadata.voices.iter().any(|v| v.id.is_default());
+            if !has_explicit_default {
+                let default_target = resolve_default_voice(&self.metadata.voices);
+                for line in &mut lines {
+                    if line.voice.is_default() {
+                        line.voice = default_target.clone();
+                    }
+                }
+            }
+        }
+
+        lines.sort_by_key(|l| (l.offset, l.duration));
+
         let mlyr = Mlyr {
             metadata: self.metadata,
-            lyrics: Lyrics { lines: self.lines },
+            lyrics: Lyrics { lines },
         };
         mlyr.validate()?;
         Ok(mlyr)

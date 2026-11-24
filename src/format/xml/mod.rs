@@ -1,11 +1,10 @@
 mod dto;
-mod serde_helpers;
 
 use std::str::FromStr;
 
 use crate::convert::{ConversionError, LyricsConverter};
 use crate::define_lyrics_type;
-use crate::format::normalize::RawMlyr;
+use crate::format::normalize::{RawMlyr, normalize_raw_mlyr};
 use crate::model::Mlyr;
 
 use super::FormatError;
@@ -19,12 +18,12 @@ define_lyrics_type!(
 impl Mlyr {
     /// Parses a MLYR XML document into a validated [`Mlyr`] model
     pub fn from_xml(xml: &str) -> Result<Self, FormatError> {
-        let raw_de: XmlMlyrDe =
+        let xml_de: XmlMlyrDe =
             quick_xml::de::from_str(xml).map_err(|e| FormatError::XmlDeserialize {
                 source: Box::new(e),
             })?;
-        let raw = RawMlyr::from(raw_de);
-        Ok(Mlyr::try_from(raw)?)
+        let raw = RawMlyr::try_from(xml_de)?;
+        normalize_raw_mlyr(raw)
     }
 
     /// Serializes this [`Mlyr`] model into compact MLYR XML

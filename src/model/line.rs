@@ -1,38 +1,29 @@
 use std::time::Duration;
 
-use super::{ParallelLine, Segment};
+use super::{Segment, VoiceId};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum LineKind {
+    #[default]
+    Main,
+    Background,
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Line {
-    pub offset: Option<Duration>,
-    pub voice: u8,
+    pub kind: LineKind,
+    pub offset: Duration,
+    pub duration: Duration,
+    pub voice: VoiceId,
     pub segments: Vec<Segment>,
-    pub parallel: Option<ParallelLine>,
 }
 
 impl Line {
-    /// Returns the absolute end time of this line
-    ///
-    /// Returns `None` if the line has no offset
-    pub fn absolute_end_time(&self) -> Option<Duration> {
-        let line_offset = self.offset?;
+    pub fn end(&self) -> Duration {
+        self.offset + self.duration
+    }
 
-        let main_end = line_offset
-            + self
-                .segments
-                .last()
-                .map(|s| s.offset)
-                .unwrap_or(Duration::ZERO);
-
-        let parallel_end = self.parallel.as_ref().map_or(Duration::ZERO, |p| {
-            line_offset
-                + p.offset.unwrap_or(Duration::ZERO)
-                + p.segments
-                    .last()
-                    .map(|s| s.offset)
-                    .unwrap_or(Duration::ZERO)
-        });
-
-        Some(std::cmp::max(main_end, parallel_end))
+    pub fn is_bg(&self) -> bool {
+        self.kind == LineKind::Background
     }
 }

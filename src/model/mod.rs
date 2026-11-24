@@ -1,18 +1,20 @@
 mod line;
 mod lyrics;
 mod metadata;
-mod parallel_line;
 mod segment;
 mod source;
+mod voice;
 
-pub use line::Line;
+pub use line::{Line, LineKind};
 pub use lyrics::Lyrics;
 pub use metadata::Metadata;
-pub use parallel_line::ParallelLine;
 pub use segment::Segment;
-pub use source::{Source, Sources};
+pub use source::Source;
+pub use voice::{Voice, VoiceId, VoiceRole};
 
 use std::time::Duration;
+
+use crate::SignedTimestamp;
 
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct Mlyr {
@@ -33,36 +35,39 @@ impl Mlyr {
         &self.lyrics
     }
 
-    /// Adjusts line offsets in the lyrics by the given duration delta
+    /// Shifts all lyric line offsets, preserving relative spacing
     ///
-    /// Timestamps that would become negative are clamped to zero
-    pub fn shift_timestamps(&mut self, delta: Duration, forward: bool) {
-        if let Some(ref mut len) = self.metadata.length {
-            if forward {
-                *len += delta;
-            } else {
-                *len = len.checked_sub(delta).unwrap_or(Duration::ZERO);
-            }
+    /// Shifts are clamped to make sure line offsets don't become negative. Increases `metadata.length`, if needed.
+    /// Returns clamped offset
+    pub fn shift(&mut self, offset: impl Into<SignedTimestamp>) -> Duration {
+        let offset = offset.into();
+        if self.lyrics.lines.is_empty() || offset.magnitude.is_zero() {
+            return Duration::ZERO;
         }
 
-        for line in &mut self.lyrics.lines {
-            if let Some(ref mut offset) = line.offset {
-                if forward {
-                    *offset += delta;
-                } else {
-                    *offset = offset.checked_sub(delta).unwrap_or(Duration::ZERO);
-                }
+        if offset.negative {
+            let min_offset = self
+                .lyrics
+                .lines
+                .iter()
+                .map(|l| l.offset)
+                .min()
+                .unwrap_or(Duration::ZERO);
+            let effective = offset.magnitude.min(min_offset);
+            for line in &mut self.lyrics.lines {
+                line.offset -= effective;
             }
-
-            if let Some(ref mut parallel) = line.parallel {
-                if let Some(ref mut offset) = parallel.offset {
-                    if forward {
-                        *offset += delta;
-                    } else {
-                        *offset = offset.checked_sub(delta).unwrap_or(Duration::ZERO);
-                    }
-                }
+            effective
+        } else {
+            let mut max_end = Duration::ZERO;
+            for line in &mut self.lyrics.lines {
+                line.offset = line.offset.saturating_add(offset.magnitude);
+                max_end = max_end.max(line.offset.saturating_add(line.duration));
             }
+            if let Some(ref mut track_length) = self.metadata.length {
+                *track_length = (*track_length).max(max_end);
+            }
+            offset.magnitude
         }
     }
 }

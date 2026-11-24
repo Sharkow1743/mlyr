@@ -1,8 +1,11 @@
 use std::time::Duration;
 
-use crate::format::normalize::{RawLine, RawLyrics, RawMlyr, RawSegment};
-use crate::model::{Metadata, Mlyr, Sources};
+use crate::format::normalize::{RawLine, RawMetadata, RawMlyr, normalize_raw_mlyr};
+use crate::model::{LineKind, Mlyr, Segment};
 use crate::{ConversionError, LyricsConverter, define_lyrics_type};
+
+const MIN_LINE_DURATION: Duration = Duration::from_millis(1);
+const DEFAULT_TAIL_DURATION: Duration = Duration::from_secs(5);
 
 define_lyrics_type!(
     pub struct Lrc;
@@ -10,14 +13,8 @@ define_lyrics_type!(
 
 impl LyricsConverter for Lrc {
     fn to_mlyr(lrc: Self) -> Result<Mlyr, ConversionError> {
-        let mut raw_lines = Vec::new();
-        let mut metadata = Metadata {
-            title: None,
-            artist: None,
-            album: None,
-            length: None,
-            sources: Sources::default(),
-        };
+        let mut parsed_lines: Vec<(Duration, Vec<Segment>)> = Vec::new();
+        let mut metadata = RawMetadata::default();
 
         for raw_line in lrc.0.lines() {
             let raw_line = raw_line.trim();
@@ -33,9 +30,9 @@ impl LyricsConverter for Lrc {
                             let key = tag_content[..colon_idx].trim().to_lowercase();
                             let val = tag_content[colon_idx + 1..].trim().to_string();
                             match key.as_str() {
-                                "ti" => metadata.title = Some(val),
-                                "ar" => metadata.artist = Some(val),
-                                "al" => metadata.album = Some(val),
+                                "ti" if !val.is_empty() => metadata.title = Some(val),
+                                "ar" if !val.is_empty() => metadata.artist = Some(val),
+                                "al" if !val.is_empty() => metadata.album = Some(val),
                                 "length" => {
                                     if let Some(dur) = parse_lrc_timestamp(&val) {
                                         metadata.length = Some(dur);
@@ -66,18 +63,10 @@ impl LyricsConverter for Lrc {
 
             let lyrics_text = raw_line[text_start_idx..].trim();
             if timestamps.is_empty() {
-                if !lyrics_text.is_empty() {
-                    raw_lines.push(RawLine {
-                        offset: None,
-                        voice: None,
-                        segments: vec![RawSegment {
-                            offset: None,
-                            text: lyrics_text.to_string(),
-                        }],
-                        parallel: None,
-                    });
-                }
-                continue;
+                return Err(ConversionError::InvalidFormat {
+                    format_name: "Lrc",
+                    message: format!("Unsynced LRC line is not allowed: '{raw_line}'"),
+                });
             }
 
             for &ts in &timestamps {
@@ -96,18 +85,13 @@ impl LyricsConverter for Lrc {
                             if let Some(absolute_seg_ts) = parse_lrc_timestamp(inner_ts_str) {
                                 if !current_segment_text.is_empty() || last_segment_offset.is_some()
                                 {
-                                    segments.push(RawSegment {
-                                        offset: last_segment_offset,
-                                        text: current_segment_text.clone(),
+                                    segments.push(Segment {
+                                        offset: last_segment_offset.unwrap_or(Duration::ZERO),
+                                        text: std::mem::take(&mut current_segment_text),
                                     });
-                                    current_segment_text.clear();
                                 }
 
-                                let relative_offset = if absolute_seg_ts >= ts {
-                                    absolute_seg_ts - ts
-                                } else {
-                                    Duration::ZERO
-                                };
+                                let relative_offset = absolute_seg_ts.saturating_sub(ts);
                                 last_segment_offset = Some(relative_offset);
                                 cursor += close_tag_idx + 1;
                                 continue;
@@ -119,89 +103,93 @@ impl LyricsConverter for Lrc {
                 }
 
                 if !current_segment_text.is_empty() || last_segment_offset.is_some() {
-                    segments.push(RawSegment {
-                        offset: last_segment_offset,
+                    segments.push(Segment {
+                        offset: last_segment_offset.unwrap_or(Duration::ZERO),
                         text: current_segment_text,
                     });
                 }
 
-                if !segments.is_empty() && segments.iter().all(|s| s.offset.is_none()) {
-                    segments[0].offset = Some(Duration::ZERO);
-                }
-
-                raw_lines.push(RawLine {
-                    offset: Some(ts),
-                    voice: None,
-                    segments,
-                    parallel: None,
-                });
+                parsed_lines.push((ts, segments));
             }
         }
 
-        let raw_mlyr = RawMlyr {
-            metadata: if metadata.title.is_some()
-                || metadata.artist.is_some()
-                || metadata.album.is_some()
-                || metadata.length.is_some()
-            {
-                Some(metadata)
+        parsed_lines.sort_by_key(|(ts, _)| *ts);
+
+        let mut raw_lines = Vec::with_capacity(parsed_lines.len());
+        for i in 0..parsed_lines.len() {
+            let (offset, segments) = &parsed_lines[i];
+            let last_seg_offset = segments.last().map(|s| s.offset).unwrap_or(Duration::ZERO);
+
+            let duration = if let Some((next_offset, _)) = parsed_lines.get(i + 1) {
+                let delta = next_offset.saturating_sub(*offset);
+                if delta.is_zero() {
+                    MIN_LINE_DURATION.max(last_seg_offset)
+                } else {
+                    delta.max(last_seg_offset)
+                }
             } else {
-                None
-            },
-            lyrics: RawLyrics { lines: raw_lines },
+                match metadata.length {
+                    Some(len) if len > *offset => (len - *offset).max(last_seg_offset),
+                    _ => DEFAULT_TAIL_DURATION.max(last_seg_offset),
+                }
+            };
+
+            raw_lines.push(RawLine {
+                kind: LineKind::Main,
+                offset: *offset,
+                duration,
+                voice: None,
+                segments: segments.clone(),
+            });
+        }
+
+        let raw_mlyr = RawMlyr {
+            metadata,
+            lyrics_offset: None,
+            lines: raw_lines,
         };
 
-        let mlyr = Mlyr::try_from(raw_mlyr)?;
-        Ok(mlyr)
+        Ok(normalize_raw_mlyr(raw_mlyr)?)
     }
 
     fn from_mlyr(mlyr: Mlyr) -> Result<Self, ConversionError> {
         mlyr.validate()?;
         let mut output = String::new();
 
-        if !mlyr.metadata.is_empty() {
-            if let Some(ref ti) = mlyr.metadata.title {
-                output.push_str(&format!("[ti:{ti}]\n"));
-            }
-            if let Some(ref ar) = mlyr.metadata.artist {
-                output.push_str(&format!("[ar:{ar}]\n"));
-            }
-            if let Some(ref al) = mlyr.metadata.album {
-                output.push_str(&format!("[al:{al}]\n"));
-            }
-            if let Some(len) = mlyr.metadata.length {
-                output.push_str(&format!("[length:{}]\n", format_lrc_timestamp(len)));
-            }
+        if let Some(ref ti) = mlyr.metadata.title {
+            output.push_str(&format!("[ti:{ti}]\n"));
+        }
+        if let Some(ref ar) = mlyr.metadata.artist {
+            output.push_str(&format!("[ar:{ar}]\n"));
+        }
+        if let Some(ref al) = mlyr.metadata.album {
+            output.push_str(&format!("[al:{al}]\n"));
+        }
+        if let Some(len) = mlyr.metadata.length {
+            output.push_str(&format!("[length:{}]\n", format_lrc_timestamp(len)));
         }
 
         for line in &mlyr.lyrics.lines {
-            if let Some(line_offset) = line.offset {
-                let ts_str = format_lrc_timestamp(line_offset);
-                output.push_str(&format!("[{ts_str}]"));
+            let ts_str = format_lrc_timestamp(line.offset);
+            output.push_str(&format!("[{ts_str}]"));
 
-                let has_word_sync = line.segments.iter().any(|s| s.offset != Duration::ZERO);
+            let has_word_sync = line.segments.iter().any(|s| s.offset != Duration::ZERO);
 
-                if has_word_sync {
-                    for seg in &line.segments {
-                        let absolute_seg_ts = line_offset + seg.offset;
-                        output.push_str(&format!(
-                            "<{}>{}",
-                            format_lrc_timestamp(absolute_seg_ts),
-                            seg.text
-                        ));
-                    }
-                } else {
-                    for seg in &line.segments {
-                        output.push_str(&seg.text);
-                    }
+            if has_word_sync {
+                for seg in &line.segments {
+                    let absolute_seg_ts = line.offset + seg.offset;
+                    output.push_str(&format!(
+                        "<{}>{}",
+                        format_lrc_timestamp(absolute_seg_ts),
+                        seg.text
+                    ));
                 }
-                output.push('\n');
             } else {
                 for seg in &line.segments {
                     output.push_str(&seg.text);
                 }
-                output.push('\n');
             }
+            output.push('\n');
         }
 
         Ok(Lrc(output))

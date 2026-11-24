@@ -1,6 +1,9 @@
+pub mod inline_text;
 pub(crate) mod normalize;
+pub mod timestamp;
 pub mod xml;
 
+pub use timestamp::SignedTimestamp;
 pub use xml::MlyrXml;
 
 use crate::validation::ValidationError;
@@ -9,6 +12,12 @@ use crate::validation::ValidationError;
 pub enum FormatError {
     #[error("Validation error: {0}")]
     Validation(#[from] ValidationError),
+
+    #[error("Invalid timestamp '{input}': {reason}")]
+    InvalidTimestamp { input: String, reason: &'static str },
+
+    #[error("Invalid inline synced text: {reason}")]
+    InvalidInlineText { reason: String },
 
     #[error("Failed to parse MLYR XML: {source}")]
     XmlDeserialize {

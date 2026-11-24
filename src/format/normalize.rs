@@ -1,120 +1,159 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::Duration;
 
-use crate::model::{Line, Lyrics, Metadata, Mlyr, ParallelLine, Segment};
+use crate::model::{
+    Line, LineKind, Lyrics, Metadata, Mlyr, Segment, Source, Voice, VoiceId, VoiceRole,
+};
 use crate::validation::ValidationError;
 
-pub(crate) struct RawMlyr {
-    pub(crate) metadata: Option<Metadata>,
-    pub(crate) lyrics: RawLyrics,
-}
+use super::{FormatError, SignedTimestamp};
 
-pub(crate) struct RawLyrics {
+pub(crate) struct RawMlyr {
+    pub(crate) metadata: RawMetadata,
+    pub(crate) lyrics_offset: Option<SignedTimestamp>,
     pub(crate) lines: Vec<RawLine>,
 }
 
+#[derive(Default)]
+pub(crate) struct RawMetadata {
+    pub(crate) title: Option<String>,
+    pub(crate) artist: Option<String>,
+    pub(crate) album: Option<String>,
+    pub(crate) length: Option<Duration>,
+    pub(crate) voices: Vec<RawVoiceDecl>,
+    pub(crate) sources: Vec<Source>,
+}
+
+pub(crate) struct RawVoiceDecl {
+    pub(crate) id: String,
+    pub(crate) role: VoiceRole,
+    pub(crate) singer: Option<String>,
+}
+
 pub(crate) struct RawLine {
-    pub(crate) offset: Option<Duration>,
-    pub(crate) voice: Option<RawVoice>,
-    pub(crate) segments: Vec<RawSegment>,
-    pub(crate) parallel: Option<RawParallelLine>,
+    pub(crate) kind: LineKind,
+    pub(crate) offset: Duration,
+    pub(crate) duration: Duration,
+    pub(crate) voice: Option<String>,
+    pub(crate) segments: Vec<Segment>,
 }
 
-pub(crate) struct RawParallelLine {
-    pub(crate) offset: Option<Duration>,
-    pub(crate) voice: Option<RawVoice>,
-    pub(crate) segments: Vec<RawSegment>,
-}
-
-pub(crate) struct RawSegment {
-    pub(crate) offset: Option<Duration>,
-    pub(crate) text: String,
-}
-
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub(crate) enum RawVoice {
-    Int(u64),
-    Str(String),
-}
-
-impl TryFrom<RawMlyr> for Mlyr {
-    type Error = ValidationError;
-
-    fn try_from(raw: RawMlyr) -> Result<Self, Self::Error> {
-        let unique_voices: HashSet<RawVoice> = raw
-            .lyrics
-            .lines
-            .iter()
-            .filter_map(|item| item.voice.clone())
-            .collect();
-
-        if unique_voices.len() >= 255 {
-            return Err(Self::Error::TooManyUniqueVoices);
-        }
-
-        let mut voice_map = HashMap::new();
-        let mut next_voice_id = 1u8;
-
-        let mut get_voice_id = |raw_voice: Option<RawVoice>| -> u8 {
-            match raw_voice {
-                Some(voice) => *voice_map.entry(voice).or_insert_with(|| {
-                    let id = next_voice_id;
-                    next_voice_id = next_voice_id.saturating_add(1);
-                    id
-                }),
-                None => 0,
-            }
-        };
-
-        let mut lines = Vec::with_capacity(raw.lyrics.lines.len());
-        for rl in raw.lyrics.lines {
-            let segments: Vec<Segment> = rl
-                .segments
-                .into_iter()
-                .map(|s| Segment {
-                    offset: s.offset.unwrap_or(Duration::ZERO),
-                    text: s.text,
-                })
-                .collect();
-
-            let parallel = rl.parallel.map(|rp| {
-                let p_segments: Vec<Segment> = rp
-                    .segments
-                    .into_iter()
-                    .map(|s| Segment {
-                        offset: s.offset.unwrap_or(Duration::ZERO),
-                        text: s.text,
-                    })
-                    .collect();
-
-                ParallelLine {
-                    offset: rp.offset,
-                    voice: get_voice_id(rp.voice),
-                    segments: p_segments,
-                }
-            });
-
-            lines.push(Line {
-                offset: rl.offset,
-                voice: get_voice_id(rl.voice),
-                segments,
-                parallel,
-            });
-        }
-
-        lines.sort_by(|a, b| match (a.offset, b.offset) {
-            (Some(oa), Some(ob)) => oa.cmp(&ob),
-            (Some(_), None) => std::cmp::Ordering::Greater,
-            (None, Some(_)) => std::cmp::Ordering::Less,
-            (None, None) => std::cmp::Ordering::Equal,
-        });
-
-        let mlyr = Mlyr {
-            metadata: raw.metadata.unwrap_or_default(),
-            lyrics: Lyrics { lines },
-        };
-
-        mlyr.validate()?;
-        Ok(mlyr)
+pub(crate) fn resolve_default_voice(voices: &[Voice]) -> VoiceId {
+    if let Some(explicit) = voices.iter().find(|v| v.id.is_default()) {
+        return explicit.id.clone();
     }
+    if let Some(first_primary) = voices.iter().find(|v| v.role == VoiceRole::Primary) {
+        return first_primary.id.clone();
+    }
+    if let Some(first_any) = voices.first() {
+        return first_any.id.clone();
+    }
+    VoiceId::default_id()
+}
+
+pub(crate) fn normalize_raw_mlyr(raw: RawMlyr) -> Result<Mlyr, FormatError> {
+    let voices = build_voice_table(raw.metadata.voices)?;
+    let default_target = resolve_default_voice(&voices);
+
+    let metadata = Metadata {
+        title: raw.metadata.title,
+        artist: raw.metadata.artist,
+        album: raw.metadata.album,
+        length: raw.metadata.length,
+        voices,
+        sources: raw.metadata.sources,
+    };
+
+    let mut lines = Vec::with_capacity(raw.lines.len());
+    for rl in raw.lines {
+        let voice = match rl.voice {
+            Some(v) => {
+                let vid = VoiceId::new(v)?;
+                if vid.is_default() && !metadata.voices.iter().any(|decl| decl.id.is_default()) {
+                    default_target.clone()
+                } else {
+                    vid
+                }
+            }
+            None => default_target.clone(),
+        };
+
+        lines.push(Line {
+            kind: rl.kind,
+            offset: rl.offset,
+            duration: rl.duration,
+            voice,
+            segments: rl.segments,
+        });
+    }
+
+    if let Some(global) = raw.lyrics_offset {
+        if !lines.is_empty() && !global.magnitude.is_zero() {
+            if global.negative {
+                let min_offset = lines
+                    .iter()
+                    .map(|l| l.offset)
+                    .min()
+                    .unwrap_or(Duration::ZERO);
+                let shift = global.magnitude.min(min_offset);
+                for line in &mut lines {
+                    line.offset -= shift;
+                }
+            } else {
+                for line in &mut lines {
+                    line.offset += global.magnitude;
+                }
+            }
+        }
+    }
+
+    lines.sort_by_key(|l| (l.offset, l.duration));
+
+    let mlyr = Mlyr {
+        metadata,
+        lyrics: Lyrics { lines },
+    };
+    mlyr.validate()?;
+    Ok(mlyr)
+}
+
+fn build_voice_table(decls: Vec<RawVoiceDecl>) -> Result<Vec<Voice>, ValidationError> {
+    let mut voices: Vec<Voice> = Vec::new();
+    let mut index_by_id: HashMap<VoiceId, usize> = HashMap::new();
+
+    for decl in decls {
+        let id = VoiceId::new(decl.id)?;
+        let singer = decl
+            .singer
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        if let Some(&idx) = index_by_id.get(&id) {
+            let existing = &mut voices[idx];
+            if existing.role != decl.role {
+                return Err(ValidationError::ConflictingVoiceRole {
+                    id,
+                    existing: existing.role,
+                    conflicting: decl.role,
+                });
+            }
+            if let Some(name) = singer {
+                existing.singers.push(name);
+            }
+        } else {
+            if voices.len() >= 4 {
+                return Err(ValidationError::TooManyVoices {
+                    count: voices.len() + 1,
+                });
+            }
+            let mut voice = Voice::new(id.clone(), decl.role);
+            if let Some(name) = singer {
+                voice.singers.push(name);
+            }
+            index_by_id.insert(id, voices.len());
+            voices.push(voice);
+        }
+    }
+
+    Ok(voices)
 }

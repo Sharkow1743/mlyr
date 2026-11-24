@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use super::{Source, Sources};
+use super::{Source, Voice};
 
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct Metadata {
@@ -8,17 +8,19 @@ pub struct Metadata {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub length: Option<Duration>,
-    pub sources: Sources,
+    pub voices: Vec<Voice>,
+    pub sources: Vec<Source>,
 }
 
 impl Metadata {
-    pub fn new(song_name: &str, artist: &str) -> Self {
+    pub fn new(title: &str, artist: &str) -> Self {
         Self {
-            title: Some(song_name.to_string()),
+            title: Some(title.to_string()),
             artist: Some(artist.to_string()),
             album: None,
             length: None,
-            sources: Sources::default(),
+            voices: Vec::new(),
+            sources: Vec::new(),
         }
     }
 
@@ -32,11 +34,13 @@ impl Metadata {
         self
     }
 
-    pub fn source(mut self, name: &str, url: Option<String>) -> Self {
-        self.sources.list.push(Source {
-            name: name.to_string(),
-            url,
-        });
+    pub fn voice(mut self, voice: Voice) -> Self {
+        self.voices.push(voice);
+        self
+    }
+
+    pub fn source(mut self, source: Source) -> Self {
+        self.sources.push(source);
         self
     }
 
@@ -45,6 +49,7 @@ impl Metadata {
             && self.artist.is_none()
             && self.album.is_none()
             && self.length.is_none()
+            && self.voices.is_empty()
             && self.sources.is_empty()
     }
 }

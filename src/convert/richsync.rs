@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use crate::format::normalize::{RawLine, RawLyrics, RawMlyr, RawSegment};
-use crate::model::Mlyr;
+use crate::format::normalize::{RawLine, RawMetadata, RawMlyr, normalize_raw_mlyr};
+use crate::model::{LineKind, Mlyr, Segment};
 use crate::{ConversionError, LyricsConverter, define_lyrics_type};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -19,7 +19,7 @@ struct RichSyncWord {
 }
 
 define_lyrics_type!(
-    /// Musixmatch's internal JSON-based format
+    /// Musixmatch's internal JSON-based format.
     pub struct Richsync;
 );
 
@@ -34,56 +34,70 @@ impl LyricsConverter for Richsync {
 
         for mxm_line in mxm_lines {
             let line_offset = secs_to_duration(mxm_line.ts, "ts")?;
-            let mut segments = Vec::with_capacity(mxm_line.l.len());
+            let line_end = secs_to_duration(mxm_line.te, "te")?;
 
-            for word in mxm_line.l {
-                let word_offset = secs_to_duration(word.o, "o")?;
-                segments.push(RawSegment {
-                    offset: Some(word_offset),
-                    text: word.c,
+            if line_end <= line_offset {
+                return Err(ConversionError::InvalidFormat {
+                    format_name: "Richsync",
+                    message: format!(
+                        "Line end 'te' ({}) must be strictly greater than start 'ts' ({})",
+                        mxm_line.te, mxm_line.ts
+                    ),
                 });
             }
+            let duration = line_end - line_offset;
+
+            let segments = if mxm_line.l.is_empty() && !mxm_line.x.is_empty() {
+                vec![Segment {
+                    offset: Duration::ZERO,
+                    text: mxm_line.x,
+                }]
+            } else {
+                let mut segs = Vec::with_capacity(mxm_line.l.len());
+                for word in mxm_line.l {
+                    let word_offset = secs_to_duration(word.o, "o")?;
+                    segs.push(Segment {
+                        offset: word_offset,
+                        text: word.c,
+                    });
+                }
+                segs
+            };
 
             raw_lines.push(RawLine {
-                offset: Some(line_offset),
+                kind: LineKind::Main,
+                offset: line_offset,
+                duration,
                 voice: None,
                 segments,
-                parallel: None,
             });
         }
 
         let raw_mlyr = RawMlyr {
-            metadata: None,
-            lyrics: RawLyrics { lines: raw_lines },
+            metadata: RawMetadata::default(),
+            lyrics_offset: None,
+            lines: raw_lines,
         };
 
-        let mlyr = Mlyr::try_from(raw_mlyr)?;
-        Ok(mlyr)
+        Ok(normalize_raw_mlyr(raw_mlyr)?)
     }
 
     fn from_mlyr(mlyr: Mlyr) -> Result<Self, ConversionError> {
         mlyr.validate()?;
 
-        let mut mxm_lines = Vec::new();
+        let mut mxm_lines = Vec::with_capacity(mlyr.lyrics.lines.len());
 
         for line in &mlyr.lyrics.lines {
-            let ts = line.offset.unwrap_or(Duration::ZERO).as_secs_f64();
-            let last_offset_sec = line
-                .segments
-                .last()
-                .map(|s| s.offset)
-                .unwrap_or(Duration::ZERO)
-                .as_secs_f64();
-            let te = ts + last_offset_sec;
+            let ts = line.offset.as_secs_f64();
+            let te = line.end().as_secs_f64();
 
-            let mut word_list = Vec::new();
+            let mut word_list = Vec::with_capacity(line.segments.len());
             let mut full_text = String::new();
 
             for seg in &line.segments {
-                let offset_sec = seg.offset.as_secs_f64();
                 word_list.push(RichSyncWord {
                     c: seg.text.clone(),
-                    o: offset_sec,
+                    o: seg.offset.as_secs_f64(),
                 });
                 full_text.push_str(&seg.text);
             }
@@ -112,5 +126,5 @@ fn secs_to_duration(secs: f64, field: &str) -> Result<Duration, ConversionError>
             message: format!("Invalid non-finite or negative '{field}' value: {secs}"),
         });
     }
-    Ok(Duration::from_secs_f64(secs))
+    Ok(Duration::from_millis((secs * 1_000.0).round() as u64))
 }

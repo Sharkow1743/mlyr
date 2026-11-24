@@ -1,66 +1,64 @@
 use std::time::Duration;
 
-use crate::model::{Line, ParallelLine, Segment};
+use crate::model::{Line, LineKind, Segment, VoiceId};
 use crate::validation::ValidationError;
 
 use super::IntoOffset;
 
 pub struct LineBuilder {
-    offset: Option<Duration>,
-    voice: u8,
+    kind: LineKind,
+    offset: Duration,
+    duration: Duration,
+    voice: VoiceId,
     segments: Vec<Segment>,
-    parallel: Option<ParallelLine>,
 }
 
 impl LineBuilder {
-    pub fn new<T: IntoOffset>(offset: T) -> Self {
+    pub fn new<O: IntoOffset, D: IntoOffset>(offset: O, duration: D) -> Self {
         Self {
-            offset: offset.into_offset(),
-            voice: 0,
+            kind: LineKind::Main,
+            offset: offset.into_offset().unwrap_or(Duration::ZERO),
+            duration: duration.into_offset().unwrap_or(Duration::ZERO),
+            voice: VoiceId::default_id(),
             segments: Vec::new(),
-            parallel: None,
         }
     }
 
-    pub fn voice(mut self, voice: u8) -> Self {
+    pub fn background<O: IntoOffset, D: IntoOffset>(offset: O, duration: D) -> Self {
+        Self {
+            kind: LineKind::Background,
+            offset: offset.into_offset().unwrap_or(Duration::ZERO),
+            duration: duration.into_offset().unwrap_or(Duration::ZERO),
+            voice: VoiceId::default_id(),
+            segments: Vec::new(),
+        }
+    }
+
+    pub fn kind(mut self, kind: LineKind) -> Self {
+        self.kind = kind;
+        self
+    }
+
+    pub fn voice(mut self, voice: VoiceId) -> Self {
         self.voice = voice;
         self
     }
 
-    pub fn add_segment<T: IntoOffset>(
-        mut self,
-        offset: T,
-        text: String,
-    ) -> Result<Self, ValidationError> {
-        let current_val = offset.into_offset().unwrap_or(Duration::ZERO);
-        if let Some(last_seg) = self.segments.last() {
-            let last_val = last_seg.offset;
-            if current_val < last_val {
-                return Err(ValidationError::SegmentOffsetDecreasing {
-                    line_offset: self.offset,
-                    previous: last_val,
-                    current: current_val,
-                });
-            }
-        }
+    pub fn add_segment<T: IntoOffset>(mut self, offset: T, text: impl Into<String>) -> Self {
         self.segments.push(Segment {
-            offset: current_val,
-            text,
+            offset: offset.into_offset().unwrap_or(Duration::ZERO),
+            text: text.into(),
         });
-        Ok(self)
-    }
-
-    pub fn parallel(mut self, parallel: ParallelLine) -> Self {
-        self.parallel = Some(parallel);
         self
     }
 
     pub fn build(self) -> Result<Line, ValidationError> {
         let line = Line {
+            kind: self.kind,
             offset: self.offset,
+            duration: self.duration,
             voice: self.voice,
             segments: self.segments,
-            parallel: self.parallel,
         };
         line.validate_local()?;
         Ok(line)
