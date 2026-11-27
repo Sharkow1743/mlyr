@@ -58,13 +58,10 @@ impl FromStr for SignedTimestamp {
     }
 }
 
-/// Parses an unsigned MLYR `Timestamp` (`<sec>[.<frac>]` or `<min>:[<sec>][.<frac>]`) into a millisecond-precision [`Duration`]
+/// Parses an unsigned MLYR `Timestamp` (`[m:][s][.f]`) into a millisecond-precision [`Duration`].
 pub fn parse_timestamp(input: &str) -> Result<Duration, FormatError> {
     if input.is_empty() {
-        return Err(FormatError::InvalidTimestamp {
-            input: input.to_string(),
-            reason: "timestamp cannot be empty",
-        });
+        return Ok(Duration::ZERO);
     }
 
     let (mins_str, rest) = match input.split_once(':') {
@@ -99,10 +96,10 @@ pub fn parse_timestamp(input: &str) -> Result<Duration, FormatError> {
         None => (rest, None),
     };
 
-    let secs: u64 = if mins_str.is_some() && sec_str.is_empty() {
+    let secs: u64 = if sec_str.is_empty() {
         0
     } else {
-        if sec_str.is_empty() || !sec_str.bytes().all(|b| b.is_ascii_digit()) {
+        if !sec_str.bytes().all(|b| b.is_ascii_digit()) {
             return Err(FormatError::InvalidTimestamp {
                 input: input.to_string(),
                 reason: "seconds must contain one or more ASCII digits",

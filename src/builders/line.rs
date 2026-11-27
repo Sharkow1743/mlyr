@@ -24,6 +24,10 @@ impl LineBuilder {
         }
     }
 
+    pub fn main<O: IntoOffset, D: IntoOffset>(offset: O, duration: D) -> Self {
+        Self::new(offset, duration)
+    }
+
     pub fn background<O: IntoOffset, D: IntoOffset>(offset: O, duration: D) -> Self {
         Self {
             kind: LineKind::Background,
@@ -49,6 +53,11 @@ impl LineBuilder {
             offset: offset.into_offset().unwrap_or(Duration::ZERO),
             text: text.into(),
         });
+        self
+    }
+
+    pub fn add_segments(mut self, segments: impl IntoIterator<Item = Segment>) -> Self {
+        self.segments.extend(segments);
         self
     }
 
