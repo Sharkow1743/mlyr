@@ -3,6 +3,7 @@ pub mod builders;
 pub mod convert;
 #[cfg(feature = "embedding")]
 pub mod embedding;
+pub mod fetch;
 pub mod format;
 pub mod model;
 pub mod validation;
@@ -22,10 +23,18 @@ pub use convert::{ConversionError, LyricsConverter};
 pub use convert::{LyricifyLines, LyricifyQuickExport, LyricifySyllable};
 #[cfg(feature = "embedding")]
 pub use embedding::EmbeddingError;
+pub use fetch::{
+    DefaultScorer, Key, NoopNormalizer, ProviderExtensions, QueryNormalizer, ScoredCandidate,
+    Scorer, ScorerExtensions, TrackQuery,
+};
+#[cfg(feature = "fetch")]
+pub use fetch::{
+    DynLyricsProvider, FetchContext, FetchError, LyricsProvider, fetch_stream, run_provider,
+};
 #[cfg(feature = "xml")]
 pub use format::MlyrXml;
 pub use format::{FormatError, SignedTimestamp};
 pub use model::{
-    Line, LineKind, Lyrics, Metadata, Mlyr, Segment, Source, Voice, VoiceId, VoiceRole,
+    Line, LineKind, Lyrics, Metadata, Mlyr, Segment, Source, SyncKind, Voice, VoiceId, VoiceRole,
 };
 pub use validation::ValidationError;

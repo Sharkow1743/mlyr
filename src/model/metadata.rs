@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use super::{Source, Voice};
+use super::{Source, Voice, VoiceId, VoiceRole};
 
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct Metadata {
@@ -51,5 +51,23 @@ impl Metadata {
             && self.length.is_none()
             && self.voices.is_empty()
             && self.sources.is_empty()
+    }
+
+    /// Resolves the default voice for this metadata according to rules:
+    /// 1. Voice with explicit ID `"default"`
+    /// 2. First `VoiceRole::Primary`
+    /// 3. First declared voice
+    /// 4. Global `"default"` VoiceId
+    pub fn default_voice(&self) -> VoiceId {
+        if let Some(explicit) = self.voices.iter().find(|v| v.id.is_default()) {
+            return explicit.id.clone();
+        }
+        if let Some(first_primary) = self.voices.iter().find(|v| v.role == VoiceRole::Primary) {
+            return first_primary.id.clone();
+        }
+        if let Some(first_any) = self.voices.first() {
+            return first_any.id.clone();
+        }
+        VoiceId::default_id()
     }
 }
