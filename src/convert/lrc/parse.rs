@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::ConversionError;
+use crate::builders::MlyrBuilder;
 use crate::format::SignedTimestamp;
-use crate::format::normalize::{RawLine, RawMetadata, RawMlyr, RawVoiceDecl, normalize_raw_mlyr};
-use crate::model::{LineKind, Mlyr, Segment, Source, VoiceRole};
+use crate::model::{Line, LineKind, Mlyr, Segment, Source, Voice, VoiceId, VoiceRole};
 
 use super::inline::{
     contains_inline_word_timestamp, extract_inline_bg_blocks, extract_voice_prefix,
@@ -26,11 +26,20 @@ struct ParsedLrcEntry {
     parenthesized_bg_candidate: bool,
 }
 
+#[derive(Default)]
+struct ParsedLrcMetadata {
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    length: Option<Duration>,
+    sources: Vec<Source>,
+}
+
 pub(super) fn parse_lrc(input: &str) -> Result<Mlyr, ConversionError> {
     let content = input.strip_prefix('\u{FEFF}').unwrap_or(input);
 
     let mut parsed_entries: Vec<ParsedLrcEntry> = Vec::new();
-    let mut metadata = RawMetadata::default();
+    let mut metadata = ParsedLrcMetadata::default();
     let mut lyrics_offset: Option<SignedTimestamp> = None;
     let mut voice_roles: HashMap<String, VoiceRole> = HashMap::new();
 
@@ -70,7 +79,6 @@ pub(super) fn parse_lrc(input: &str) -> Result<Mlyr, ConversionError> {
             });
         }
 
-        // SPL explicit end-only line: `[00:15.00]`
         if remainder.is_empty() {
             if timestamps.len() == 1 {
                 if let Some(prev) = parsed_entries.last_mut() {
@@ -150,26 +158,34 @@ pub(super) fn parse_lrc(input: &str) -> Result<Mlyr, ConversionError> {
     promote_parenthesized_backgrounds(&mut parsed_entries);
     parsed_entries.sort_by_key(|e| (e.offset, e.kind == LineKind::Background));
 
-    let raw_lines = finalize_durations(&parsed_entries, metadata.length);
+    let lines = finalize_durations(&parsed_entries, metadata.length)?;
 
-    let mut voices: Vec<RawVoiceDecl> = voice_roles
-        .into_iter()
-        .map(|(id, role)| RawVoiceDecl {
-            id,
-            role,
-            singer: None,
-        })
-        .collect();
-    voices.sort_by(|a, b| a.id.cmp(&b.id));
-    metadata.voices = voices;
+    let mut builder = MlyrBuilder::new();
+    if let Some(ti) = metadata.title {
+        builder = builder.title(ti);
+    }
+    if let Some(ar) = metadata.artist {
+        builder = builder.artist(ar);
+    }
+    if let Some(al) = metadata.album {
+        builder = builder.album(al);
+    }
+    builder = builder
+        .length_opt(metadata.length)
+        .add_sources(metadata.sources);
 
-    let raw_mlyr = RawMlyr {
-        metadata,
-        lyrics_offset,
-        lines: raw_lines,
-    };
+    let mut voices: Vec<(String, VoiceRole)> = voice_roles.into_iter().collect();
+    voices.sort_by(|a, b| a.0.cmp(&b.0));
+    for (vid, role) in voices {
+        builder = builder.add_voice(Voice::new(VoiceId::new(vid)?, role));
+    }
 
-    Ok(normalize_raw_mlyr(raw_mlyr)?)
+    builder = builder.add_lines(lines);
+    if let Some(offset) = lyrics_offset {
+        builder = builder.shift(offset);
+    }
+
+    Ok(builder.build()?)
 }
 
 fn is_metadata_tag_line(line: &str) -> bool {
@@ -193,7 +209,7 @@ fn is_metadata_tag_line(line: &str) -> bool {
 
 fn apply_metadata_tag(
     raw_line: &str,
-    metadata: &mut RawMetadata,
+    metadata: &mut ParsedLrcMetadata,
     lyrics_offset: &mut Option<SignedTimestamp>,
 ) {
     let tag_content = &raw_line[1..raw_line.len() - 1];
@@ -268,7 +284,10 @@ fn promote_parenthesized_backgrounds(entries: &mut [ParsedLrcEntry]) {
     }
 }
 
-fn finalize_durations(entries: &[ParsedLrcEntry], track_length: Option<Duration>) -> Vec<RawLine> {
+fn finalize_durations(
+    entries: &[ParsedLrcEntry],
+    track_length: Option<Duration>,
+) -> Result<Vec<Line>, ConversionError> {
     let mut main_indices = Vec::new();
     let mut bg_indices = Vec::new();
     for (idx, entry) in entries.iter().enumerate() {
@@ -289,7 +308,7 @@ fn finalize_durations(entries: &[ParsedLrcEntry], track_length: Option<Duration>
         .map(|(pos, &idx)| (idx, pos))
         .collect();
 
-    let mut raw_lines = Vec::with_capacity(entries.len());
+    let mut lines = Vec::with_capacity(entries.len());
     for (idx, entry) in entries.iter().enumerate() {
         let last_seg_offset = entry
             .segments
@@ -329,13 +348,18 @@ fn finalize_durations(entries: &[ParsedLrcEntry], track_length: Option<Duration>
             }
         };
 
-        raw_lines.push(RawLine {
+        let voice = match entry.voice.as_deref() {
+            Some(v) => VoiceId::new(v)?,
+            None => VoiceId::default_id(),
+        };
+
+        lines.push(Line {
             kind: entry.kind,
             offset: entry.offset,
             duration,
-            voice: entry.voice.clone(),
+            voice,
             segments: entry.segments.clone(),
         });
     }
-    raw_lines
+    Ok(lines)
 }

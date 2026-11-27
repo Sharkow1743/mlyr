@@ -9,29 +9,32 @@ pub(super) fn serialize_lrc(mlyr: &Mlyr) -> Result<String, ConversionError> {
     mlyr.validate()?;
     let mut output = String::new();
 
-    if let Some(ref ti) = mlyr.metadata.title {
+    let meta = mlyr.metadata();
+    if let Some(ref ti) = meta.and_then(|m| m.title.as_deref()) {
         output.push_str(&format!("[ti:{ti}]\n"));
     }
-    if let Some(ref ar) = mlyr.metadata.artist {
+    if let Some(ref ar) = meta.and_then(|m| m.artist.as_deref()) {
         output.push_str(&format!("[ar:{ar}]\n"));
     }
-    if let Some(ref al) = mlyr.metadata.album {
+    if let Some(ref al) = meta.and_then(|m| m.album.as_deref()) {
         output.push_str(&format!("[al:{al}]\n"));
     }
-    if let Some(len) = mlyr.metadata.length {
+    if let Some(len) = meta.and_then(|m| m.length) {
         output.push_str(&format!("[length:{}]\n", format_lrc_timestamp(len)));
     }
-    for src in &mlyr.metadata.sources {
-        if matches!(src.kind.as_str(), "au" | "lr" | "by" | "re" | "ve" | "tool") {
-            if let Some(val) = src.name.as_deref().or(src.content.as_deref()) {
-                output.push_str(&format!("[{}:{val}]\n", src.kind));
+    if let Some(m) = meta {
+        for src in &m.sources {
+            if matches!(src.kind.as_str(), "au" | "lr" | "by" | "re" | "ve" | "tool") {
+                if let Some(val) = src.name.as_deref().or(src.content.as_deref()) {
+                    output.push_str(&format!("[{}:{val}]\n", src.kind));
+                }
             }
         }
     }
 
-    let emit_voices = !mlyr.metadata.voices.is_empty();
+    let emit_voices = meta.is_some_and(|m| !m.voices.is_empty());
 
-    for line in &mlyr.lyrics.lines {
+    for line in mlyr.lines() {
         let ts_str = format_lrc_timestamp(line.offset);
         output.push_str(&format!("[{ts_str}]"));
 
